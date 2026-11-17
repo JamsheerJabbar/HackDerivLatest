@@ -1,0 +1,19 @@
+{
+  "transactions": 1.0,
+  "alerts": 0.95,
+  "users": 0.9,
+  "login_events": 0.8,
+  "v_flagged_transactions": 0.75,
+  "v_open_alerts": 0.75,
+  "v_daily_summary": 0.75,
+  "v_high_risk_users": 0.75,
+  "alert_rules": 0.5,
+  "anomaly_history": 0.5,
+  "alert_history": 0.5,
+  "audit_logs": 0.4,
+  "metric_specs": 0.35,
+  "events": 0.35,
+  "metric_windows": 0.35,
+  "dashboards": 0.25,
+  "query_history": 0.25
+}

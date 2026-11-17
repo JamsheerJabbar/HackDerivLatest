@@ -15,6 +15,9 @@ class GraphState(TypedDict):
     clarification_question: Optional[str]  # Question to ask user
     relevant_columns: List[str]
     few_shot_examples: List[Dict[str, Any]]
+    fallback: Optional[str]  # 'deterministic' when the catalog fallback answered after retries
+    reference_templates: Optional[List[str]]  # catalog templates shown to the generator as references
+    metric_candidates: Optional[Dict[str, Any]]  # advanced retrieval output (metric ids, join context)
     generated_sql: Optional[str]
     validation_error: Optional[str]
     retry_count: int
@@ -29,6 +32,8 @@ class QueryRequest(BaseModel):
     query: str
     domain: DomainType = "general"  # Default to general if not specified
     conversation_id: Optional[str] = None
+    session_id: Optional[str] = None  # chat session owned by the caller; created when omitted
+    dissatisfied: bool = False  # user rejected the parameterized answer; enables gated generation for role 'super'
     conversation_history: List[Dict[str, str]] = []  # Previous messages
 
 class QueryResponse(BaseModel):
@@ -41,5 +46,9 @@ class QueryResponse(BaseModel):
     error: Optional[str] = None
     clarification_question: Optional[str] = None  # Set if needs clarification
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    source: Optional[str] = None  # parameterized | generated
+    metric_id: Optional[str] = None
+    cache_hit: bool = False
+    session_id: Optional[str] = None
     is_final: bool = False  # True if SQL was generated, False if asking for clarification
 

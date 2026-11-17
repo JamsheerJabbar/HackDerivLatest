@@ -1,0 +1,14 @@
+.eval-dashboard { padding: 24px; display: flex; flex-direction: column; gap: 20px; color: var(--text-primary, #e6e6e6); }
+.eval-header { display: flex; justify-content: space-between; align-items: center; }
+.eval-run-btn { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border, #333); background: var(--bg-secondary, #1c1f26); color: inherit; cursor: pointer; }
+.eval-run-btn:disabled { opacity: 0.6; cursor: wait; }
+.eval-banner { padding: 10px 14px; border-radius: 8px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; }
+.eval-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.eval-card { background: var(--bg-secondary, #1c1f26); border-top: 3px solid; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.eval-card-label { text-transform: capitalize; opacity: 0.7; font-size: 0.85rem; }
+.eval-card-value { font-size: 1.8rem; font-weight: 600; }
+.eval-chart { background: var(--bg-secondary, #1c1f26); border-radius: 8px; padding: 16px; }
+.eval-empty { opacity: 0.6; text-align: center; }
+.eval-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.eval-table th, .eval-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border, #2a2d35); }
+.eval-table tr.regressed td { color: #ef4444; }

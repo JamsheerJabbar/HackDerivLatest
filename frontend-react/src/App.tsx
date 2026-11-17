@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import SentinelDashboard from './components/SentinelDashboard';
 import ScanHistoryPanel from './components/ScanHistoryPanel';
+import EvalDashboard from './components/EvalDashboard';
 import type { HistoricalScan } from './components/SentinelDashboard';
 import './App.css';
 
@@ -53,6 +54,9 @@ function App() {
                     </div>
 
                     <div className="header-actions">
+                        <button className="mode-toggle-btn" onClick={() => setMode(mode === 'eval' ? 'sentinel' : 'eval')}>
+                            {mode === 'eval' ? 'Back' : 'Eval'}
+                        </button>
                         <div className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
                             <span className="status-dot"></span>
                             {isConnected ? 'Connected' : 'Disconnected'}
@@ -72,7 +76,9 @@ function App() {
 
                     {/* Main Content */}
                     <main className="main-content">
-                        {mode === 'chat' ? (
+                        {mode === 'eval' ? (
+                            <EvalDashboard />
+                        ) : mode === 'chat' ? (
                             <ChatInterface domain={selectedDomain} />
                         ) : (
                             <SentinelDashboard

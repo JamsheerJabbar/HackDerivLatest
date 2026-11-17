@@ -1,0 +1,376 @@
+[
+  {"name": "sentinel-rating-false", "kind": "happy",
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "as_thread": "t",
+      "expect": {"insight_id": "@label:a", "rating": false, "status": "human_review", "thread_id": "@notnull", "anomaly": {"flagged": false, "false_count": 1}}},
+     {"op": "h_get", "thread": "t", "user": "u1", "role": "user", "expect": {"thread_id": "@label:t", "insight_id": "@label:a", "user_id": "u1"}, "first_message": {"author_role": "system"}},
+     {"op": "audit_count", "action": "INSIGHT_RATING", "expect": 1},
+     {"op": "get_rating", "id": "a", "user": "u1", "expect": false}
+   ]}, "expected": "ok"},
+
+  {"name": "sentinel-anomaly-flag", "kind": "edge",
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "i", "n": 4},
+     {"op": "flow", "id": "i1", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": false, "false_count": 1}}},
+     {"op": "flow", "id": "i2", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": false, "false_count": 2}}},
+     {"op": "flow", "id": "i3", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": false, "false_count": 3}}},
+     {"op": "alerts", "kind": "insight_anomaly", "expect": 0},
+     {"op": "flow", "id": "i4", "user": "u1", "rating": false, "expect": {"status": "human_review", "anomaly": {"flagged": true, "false_count": 4, "threshold": 3}}},
+     {"op": "list_flags", "user": "u1", "expect_len": 1, "expect_status": ["flagged"]},
+     {"op": "alerts", "kind": "insight_anomaly", "expect": 1},
+     {"op": "audit_count", "action": "INSIGHT_ANOMALY", "expect": 1},
+     {"op": "audit_count", "action": "INSIGHT_RATING", "expect": 4},
+     {"op": "status", "user": "u1", "expect": {"flagged": true, "false_count": 4, "threshold": 3, "window_days": null}, "ids_len": 4}
+   ]}, "expected": "ok"},
+
+  {"name": "sentinel-three-false", "kind": "edge",
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "i", "n": 3},
+     {"op": "flow", "id": "i1", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "i2", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "i3", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": false, "false_count": 3, "threshold": 3}}},
+     {"op": "status", "user": "u1", "expect": {"flagged": false, "false_count": 3}},
+     {"op": "list_flags", "user": "u1", "expect_len": 0},
+     {"op": "alerts", "kind": "insight_anomaly", "expect": 0},
+     {"op": "audit_count", "action": "INSIGHT_ANOMALY", "expect": 0}
+   ]}, "expected": "ok", "added": false},
+
+  {"name": "rating-true-no-thread", "kind": "happy", "added": true,
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "flow", "id": "a", "user": "u1", "rating": true, "expect": {"insight_id": "@label:a", "rating": true, "status": "rated", "thread_id": "@null", "anomaly": {"flagged": false, "false_count": 0}}},
+     {"op": "h_list", "user": "u1", "role": "user", "expect_len": 0},
+     {"op": "audit_count", "action": "INSIGHT_RATING", "expect": 1}
+   ]}, "expected": "ok"},
+
+  {"name": "flow-audit-optional", "kind": "null", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "expect": {"status": "human_review"}}
+   ]}, "expected": "ok"},
+
+  {"name": "flow-false-twice-idempotent", "kind": "duplicate", "added": true,
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "as_thread": "t1", "expect": {}},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "as_thread": "t2", "expect": {"anomaly": {"false_count": 1, "flagged": false}}},
+     {"op": "same", "a": "t1", "b": "t2"},
+     {"op": "h_list", "user": "u1", "role": "user", "expect_len": 1}
+   ]}, "expected": "ok"},
+
+  {"name": "duplicate-false-ratings-never-flag", "kind": "duplicate", "added": true,
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": false, "false_count": 1}}},
+     {"op": "list_flags", "user": "u1", "expect_len": 0},
+     {"op": "alerts", "kind": "insight_anomaly", "expect": 0}
+   ]}, "expected": "ok"},
+
+  {"name": "store-duplicate-rating-counts-once", "kind": "duplicate", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "rate", "id": "a", "user": "u1", "rating": false, "expect": {"insight_id": "@label:a", "rating": false, "changed": true}},
+     {"op": "rate", "id": "a", "user": "u1", "rating": false, "expect": {"rating": false, "changed": false}},
+     {"op": "rate", "id": "a", "user": "u1", "rating": false, "expect": {"changed": false}},
+     {"op": "count", "user": "u1", "expect": 1},
+     {"op": "get_rating", "id": "a", "user": "u1", "expect": false}
+   ]}, "expected": "ok"},
+
+  {"name": "get-rating-unrated-is-none", "kind": "null", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "get_rating", "id": "a", "user": "u1", "expect": null},
+     {"op": "count", "user": "u1", "expect": 0},
+     {"op": "status", "user": "u1", "expect": {"flagged": false, "false_count": 0, "threshold": 3}, "ids_len": 0}
+   ]}, "expected": "ok"},
+
+  {"name": "rerate-false-to-true-lowers-count", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "i", "n": 4},
+     {"op": "rate", "id": "i1", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "i2", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "i3", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "i4", "user": "u1", "rating": false, "expect": {}},
+     {"op": "status", "user": "u1", "expect": {"flagged": true, "false_count": 4}},
+     {"op": "rate", "id": "i4", "user": "u1", "rating": true, "expect": {"rating": true, "changed": true}},
+     {"op": "get_rating", "id": "i4", "user": "u1", "expect": true},
+     {"op": "count", "user": "u1", "expect": 3},
+     {"op": "status", "user": "u1", "expect": {"flagged": false, "false_count": 3}, "ids_len": 3},
+     {"op": "rate", "id": "i4", "user": "u1", "rating": false, "expect": {"rating": false, "changed": true}},
+     {"op": "status", "user": "u1", "expect": {"flagged": true, "false_count": 4}}
+   ]}, "expected": "ok"},
+
+  {"name": "store-foreign-insight-not-ratable", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "rate", "id": "a", "user": "u2", "rating": false, "raises": "InsightNotFound"},
+     {"op": "get_rating", "id": "a", "user": "u1", "expect": null},
+     {"op": "count", "user": "u1", "expect": 0},
+     {"op": "count", "user": "u2", "expect": 0}
+   ]}, "expected": "ok"},
+
+  {"name": "store-unknown-insight-not-ratable", "kind": "null", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "rate", "id": "does-not-exist", "user": "u1", "rating": true, "raises": "InsightNotFound"},
+     {"op": "rate", "id": "", "user": "u1", "rating": false, "raises": "InsightNotFound"}
+   ]}, "expected": "ok"},
+
+  {"name": "flow-foreign-and-unknown-404", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "flow", "id": "a", "user": "u2", "rating": false, "raises_http": 404},
+     {"op": "flow", "id": "nope", "user": "u1", "rating": true, "raises_http": 404},
+     {"op": "h_list", "user": "u2", "role": "user", "expect_len": 0},
+     {"op": "h_list", "user": "u1", "role": "user", "expect_len": 0},
+     {"op": "count", "user": "u1", "expect": 0}
+   ]}, "expected": "ok"},
+
+  {"name": "per-user-scoping", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "a", "n": 4},
+     {"op": "save_many", "user": "u2", "prefix": "b", "n": 2},
+     {"op": "rate", "id": "a1", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "a2", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "a3", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "a4", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "b1", "user": "u2", "rating": false, "expect": {}},
+     {"op": "rate", "id": "b2", "user": "u2", "rating": false, "expect": {}},
+     {"op": "status", "user": "u1", "expect": {"flagged": true, "false_count": 4}, "ids_len": 4},
+     {"op": "status", "user": "u2", "expect": {"flagged": false, "false_count": 2}, "ids_len": 2},
+     {"op": "count", "user": "u3", "expect": 0},
+     {"op": "get_rating", "id": "b1", "user": "u1", "expect": null}
+   ]}, "expected": "ok"},
+
+  {"name": "source-scoping", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "c", "n": 4, "source": "chat"},
+     {"op": "save", "user": "u1", "as": "s"},
+     {"op": "rate", "id": "c1", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "c2", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "c3", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "c4", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "s", "user": "u1", "rating": false, "expect": {}},
+     {"op": "count", "user": "u1", "expect": 1},
+     {"op": "count", "user": "u1", "source": "sentinel", "expect": 1},
+     {"op": "count", "user": "u1", "source": "chat", "expect": 4},
+     {"op": "status", "user": "u1", "expect": {"flagged": false, "false_count": 1}},
+     {"op": "status", "user": "u1", "source": "chat", "expect": {"flagged": true, "false_count": 4}}
+   ]}, "expected": "ok"},
+
+  {"name": "window-days-recent-ratings-counted", "kind": "boundary", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "i", "n": 4},
+     {"op": "rate", "id": "i1", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "i2", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "i3", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "i4", "user": "u1", "rating": false, "expect": {}},
+     {"op": "count", "user": "u1", "window_days": 30, "expect": 4},
+     {"op": "count", "user": "u1", "window_days": null, "expect": 4},
+     {"op": "status", "user": "u1", "window_days": 30, "expect": {"flagged": true, "false_count": 4, "window_days": 30}, "ids_len": 4}
+   ]}, "expected": "ok"},
+
+  {"name": "threshold-parameter", "kind": "boundary", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "i", "n": 2},
+     {"op": "rate", "id": "i1", "user": "u1", "rating": false, "expect": {}},
+     {"op": "rate", "id": "i2", "user": "u1", "rating": false, "expect": {}},
+     {"op": "status", "user": "u1", "threshold": 1, "expect": {"flagged": true, "false_count": 2, "threshold": 1}},
+     {"op": "status", "user": "u1", "threshold": 2, "expect": {"flagged": false, "false_count": 2, "threshold": 2}},
+     {"op": "status", "user": "u1", "threshold": 0, "expect": {"flagged": true, "threshold": 0}}
+   ]}, "expected": "ok"},
+
+  {"name": "flag-while-open-no-more-flags-or-alerts", "kind": "duplicate", "added": true,
+   "input": {"action": "scenario", "audit": "real", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "i", "n": 6},
+     {"op": "flow", "id": "i1", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "i2", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "i3", "user": "u1", "rating": false, "expect": {}},
+     {"op": "flow", "id": "i4", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": true}}},
+     {"op": "flow", "id": "i5", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": true, "false_count": 5}}},
+     {"op": "flow", "id": "i6", "user": "u1", "rating": false, "expect": {"anomaly": {"flagged": true, "false_count": 6}}},
+     {"op": "list_flags", "user": "u1", "expect_len": 1},
+     {"op": "alerts", "kind": "insight_anomaly", "expect": 1},
+     {"op": "audit_count", "action": "INSIGHT_ANOMALY", "expect": 1},
+     {"op": "audit_count", "action": "INSIGHT_RATING", "expect": 6}
+   ]}, "expected": "ok"},
+
+  {"name": "flag-record-idempotent-and-ack", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "record_flag", "user": "u1", "source": "sentinel", "count": 4, "as": "f1"},
+     {"op": "record_flag", "user": "u1", "source": "sentinel", "count": 5, "as": "f2", "same_as": "f1"},
+     {"op": "list_flags", "user": "u1", "expect_len": 1, "expect_status": ["flagged"]},
+     {"op": "list_flags", "user": "u1", "status": "acknowledged", "expect_len": 0},
+     {"op": "record_flag", "user": "u2", "source": "sentinel", "count": 4, "as": "g1", "differs_from": "f1"},
+     {"op": "ack", "flag": "f1", "user": "u2", "raises": "InsightNotFound"},
+     {"op": "ack", "flag": "nope", "user": "u1", "raises": "InsightNotFound"},
+     {"op": "list_flags", "user": "u1", "status": "flagged", "expect_len": 1},
+     {"op": "ack", "flag": "f1", "user": "u1"},
+     {"op": "list_flags", "user": "u1", "status": "acknowledged", "expect_len": 1, "expect_status": ["acknowledged"]},
+     {"op": "list_flags", "user": "u1", "status": "flagged", "expect_len": 0},
+     {"op": "list_flags", "user": "u2", "expect_len": 1}
+   ]}, "expected": "ok"},
+
+  {"name": "handoff-open-idempotent-system-message", "kind": "duplicate", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "h_open", "id": "ins-1", "user": "u1", "reason": "bad insight", "as": "t1"},
+     {"op": "h_open", "id": "ins-1", "user": "u1", "as": "t2", "same_as": "t1"},
+     {"op": "h_open", "id": "ins-2", "user": "u1", "as": "t3", "differs_from": "t1"},
+     {"op": "h_get", "thread": "t1", "user": "u1", "role": "user", "expect": {"thread_id": "@label:t1", "insight_id": "ins-1", "user_id": "u1", "reason": "bad insight", "created_at": "@notnull"}, "messages_len": 1, "first_message": {"author_role": "system", "content": "@notnull", "created_at": "@notnull"}},
+     {"op": "h_list", "user": "u1", "role": "user", "expect_len": 2, "expect_ids": ["t3", "t1"]}
+   ]}, "expected": "ok"},
+
+  {"name": "handoff-messages-roles-and-validation", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "h_open", "id": "ins-1", "user": "u1", "as": "t"},
+     {"op": "h_post", "thread": "t", "author": "u1", "role": "user", "content": "please check", "as": "m1"},
+     {"op": "h_post", "thread": "t", "author": "adm", "role": "human", "content": "looking", "as": "m2"},
+     {"op": "h_post", "thread": "t", "author": "sys", "role": "system", "content": "note", "as": "m3"},
+     {"op": "h_post", "thread": "t", "author": "u1", "role": "robot", "content": "x", "raises": "ValueError"},
+     {"op": "h_post", "thread": "t", "author": "u1", "role": "user", "content": "", "raises": "ValueError"},
+     {"op": "h_get", "thread": "t", "user": "u1", "role": "user", "expect": {}, "messages_len": 4, "last_message": {"author_id": "sys", "author_role": "system", "content": "note"}},
+     {"op": "h_post", "thread": "nope", "author": "u1", "role": "user", "content": "hi", "raises": "HandoffNotFound"}
+   ]}, "expected": "ok"},
+
+  {"name": "handoff-access-control", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "h_open", "id": "ins-1", "user": "u1", "as": "t"},
+     {"op": "h_get", "thread": "t", "user": "u2", "role": "user", "raises": "HandoffForbidden"},
+     {"op": "h_get", "thread": "t", "user": "u2", "role": "analyst", "raises": "HandoffForbidden"},
+     {"op": "h_get", "thread": "t", "user": "adm", "role": "admin", "expect": {"user_id": "u1"}},
+     {"op": "h_get", "thread": "t", "user": "boss", "role": "super", "expect": {"user_id": "u1"}},
+     {"op": "h_get", "thread": "nope", "user": "u1", "role": "user", "raises": "HandoffNotFound"},
+     {"op": "h_list", "user": "u2", "role": "user", "expect_len": 0},
+     {"op": "h_list", "user": "adm", "role": "admin", "expect_len": 1},
+     {"op": "h_resolve", "thread": "t", "user": "u1", "role": "user", "raises": "HandoffForbidden"},
+     {"op": "h_resolve", "thread": "t", "user": "u2", "role": "user", "raises": "HandoffForbidden"}
+   ]}, "expected": "ok"},
+
+  {"name": "handoff-resolve-then-reopen", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "none", "ops": [
+     {"op": "h_open", "id": "ins-1", "user": "u1", "as": "t1"},
+     {"op": "h_resolve", "thread": "t1", "user": "adm", "role": "admin"},
+     {"op": "h_get", "thread": "t1", "user": "u1", "role": "user", "expect": {"status": "resolved"}},
+     {"op": "h_list", "user": "adm", "role": "admin", "expect_len": 0},
+     {"op": "h_open", "id": "ins-1", "user": "u1", "as": "t2", "differs_from": "t1"},
+     {"op": "h_list", "user": "adm", "role": "super", "expect_len": 1, "expect_ids": ["t2"]},
+     {"op": "h_list", "user": "u1", "role": "user", "expect_len": 2, "expect_ids": ["t2", "t1"]}
+   ]}, "expected": "ok"},
+
+  {"name": "route-rating-false-and-true", "kind": "happy", "added": true,
+   "input": {"action": "scenario", "audit": "fake", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "save", "user": "u1", "as": "b"},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{a}/rating", "user": "u1", "role": "user", "json": {"rating": false}, "expect_status": 200, "expect": {"insight_id": "@label:a", "rating": false, "status": "human_review", "thread_id": "@notnull", "anomaly": {"false_count": 1, "flagged": false}}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{b}/rating", "user": "u1", "role": "user", "json": {"rating": true}, "expect_status": 200, "expect": {"status": "rated", "thread_id": "@null"}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{a}/rating", "user": "u2", "role": "user", "json": {"rating": false}, "expect_status": 404},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/zzz/rating", "user": "u1", "role": "user", "json": {"rating": false}, "expect_status": 404},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{a}/rating", "user": "u1", "role": "user", "json": {}, "expect_status": 422}
+   ]}, "expected": "ok"},
+
+  {"name": "route-anomaly-get-and-detect-button", "kind": "happy", "added": true,
+   "input": {"action": "scenario", "audit": "fake", "ops": [
+     {"op": "save_many", "user": "u1", "prefix": "i", "n": 4},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/insights/anomaly", "user": "u1", "role": "user", "expect_status": 200, "expect": {"flagged": false, "false_count": 0, "threshold": 3}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{i1}/rating", "user": "u1", "role": "user", "json": {"rating": false}, "expect_status": 200, "expect": {}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{i2}/rating", "user": "u1", "role": "user", "json": {"rating": false}, "expect_status": 200, "expect": {}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{i3}/rating", "user": "u1", "role": "user", "json": {"rating": false}, "expect_status": 200, "expect": {}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/anomaly/detect", "user": "u1", "role": "user", "expect_status": 200, "expect": {"flagged": false, "false_count": 3, "threshold": 3, "flag_id": "@null"}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/{i4}/rating", "user": "u1", "role": "user", "json": {"rating": false}, "expect_status": 200, "expect": {"anomaly": {"flagged": true, "false_count": 4}}},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/insights/anomaly", "user": "u1", "role": "user", "expect_status": 200, "expect": {"flagged": true, "false_count": 4, "threshold": 3}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/insights/anomaly/detect", "user": "u1", "role": "user", "expect_status": 200, "expect": {"flagged": true, "false_count": 4, "threshold": 3, "flag_id": "@notnull"}},
+     {"op": "list_flags", "user": "u1", "expect_len": 1},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/insights/anomaly", "user": "u2", "role": "user", "expect_status": 200, "expect": {"flagged": false, "false_count": 0}}
+   ]}, "expected": "ok"},
+
+  {"name": "route-handoff-threads-and-messages", "kind": "edge", "added": true,
+   "input": {"action": "scenario", "audit": "fake", "ops": [
+     {"op": "save", "user": "u1", "as": "a"},
+     {"op": "flow", "id": "a", "user": "u1", "rating": false, "as_thread": "t", "expect": {}},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/handoff/threads", "user": "u1", "role": "user", "expect_status": 200, "expect_threads_len": 1},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/handoff/threads", "user": "u2", "role": "user", "expect_status": 200, "expect_threads_len": 0},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/handoff/threads", "user": "adm", "role": "admin", "expect_status": 200, "expect_threads_len": 1},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/handoff/threads/{t}", "user": "u1", "role": "user", "expect_status": 200, "expect": {"thread_id": "@label:t", "insight_id": "@label:a"}},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/handoff/threads/{t}", "user": "u2", "role": "user", "expect_status": 403},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/handoff/threads/{t}", "user": "adm", "role": "admin", "expect_status": 200, "expect": {}},
+     {"op": "http", "method": "GET", "path": "/api/v1/sentinel/handoff/threads/nope", "user": "u1", "role": "user", "expect_status": 404},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/handoff/threads/{t}/messages", "user": "u1", "role": "user", "json": {"content": "hello"}, "expect_status": 200, "expect": {}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/handoff/threads/{t}/messages", "user": "adm", "role": "admin", "json": {"content": "hi from staff"}, "expect_status": 200, "expect": {}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/handoff/threads/{t}/messages", "user": "boss", "role": "super", "json": {"content": "hi from super"}, "expect_status": 200, "expect": {}},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/handoff/threads/{t}/messages", "user": "u2", "role": "user", "json": {"content": "intruder"}, "expect_status": 403},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/handoff/threads/{t}/messages", "user": "u1", "role": "user", "json": {"content": ""}, "expect_status_in": [400, 422]},
+     {"op": "http", "method": "POST", "path": "/api/v1/sentinel/handoff/threads/nope/messages", "user": "u1", "role": "user", "json": {"content": "x"}, "expect_status": 404},
+     {"op": "h_get", "thread": "t", "user": "u1", "role": "user", "expect": {}, "messages_len": 4, "message_roles": ["system", "user", "human", "human"]}
+   ]}, "expected": "ok"},
+
+  {"name": "persist-scan-sets-insight-id", "kind": "happy", "added": true,
+   "input": {"action": "persist_scan", "identity": {"user_id": "u1", "role": "user"}, "scan_id": "scan-1",
+             "detections": [
+               {"mission_id": "m1", "mission_name": "Velocity spike", "domain": "fraud", "severity": "high", "risk_score": 88, "sql": "SELECT 1", "insight": "Velocity is 3x baseline", "recommendation": "review", "data_count": 12},
+               {"mission_id": "m2", "mission_name": "Dormant accounts", "domain": "risk", "severity": "low", "risk_score": 10, "sql": "SELECT 2", "insight": "5 dormant", "recommendation": "none", "data_count": 5}]},
+   "expected": {"saved": 2}},
+
+  {"name": "parse-missions-valid", "kind": "happy", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":\"m1\",\"name\":\"Mission 1\",\"query\":\"show failed logins\",\"domain\":\"security\",\"severity\":\"CRITICAL\"},{\"id\":\"m2\",\"name\":\"Mission 2\",\"query\":\"list large trades\",\"domain\":\"risk\",\"severity\":\"LOW\"}]"},
+   "expected": {"ids": ["m1", "m2"], "alerts": 0}},
+
+  {"name": "parse-missions-json-fence", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "```json\n[{\"id\":\"m1\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"compliance\",\"severity\":\"MEDIUM\"}]\n```"},
+   "expected": {"ids": ["m1"], "alerts": 0}},
+
+  {"name": "parse-missions-all-domains-severities", "kind": "boundary", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":\"a\",\"name\":\"n\",\"query\":\"q\",\"domain\":\"security\",\"severity\":\"CRITICAL\"},{\"id\":\"b\",\"name\":\"n\",\"query\":\"q\",\"domain\":\"compliance\",\"severity\":\"HIGH\"},{\"id\":\"c\",\"name\":\"n\",\"query\":\"q\",\"domain\":\"operations\",\"severity\":\"MEDIUM\"},{\"id\":\"d\",\"name\":\"n\",\"query\":\"q\",\"domain\":\"risk\",\"severity\":\"LOW\"}]"},
+   "expected": {"ids": ["a", "b", "c", "d"], "alerts": 0}},
+
+  {"name": "parse-missions-prose", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "Here are some missions you could run."},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-empty", "kind": "empty", "added": true,
+   "input": {"action": "parse", "text": ""},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-empty-list-is-valid-json-list", "kind": "empty", "added": true,
+   "input": {"action": "parse", "text": "[]"},
+   "expected": {"ids": [], "alerts": 0}},
+
+  {"name": "parse-missions-not-a-list", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "{\"id\":\"m1\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"risk\",\"severity\":\"LOW\"}"},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-bad-domain", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":\"m1\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"finance\",\"severity\":\"LOW\"}]"},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-bad-severity", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":\"m1\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"risk\",\"severity\":\"URGENT\"}]"},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-missing-field", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":\"m1\",\"name\":\"N\",\"domain\":\"risk\",\"severity\":\"LOW\"}]"},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-non-string-field", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":1,\"name\":\"N\",\"query\":\"q\",\"domain\":\"risk\",\"severity\":\"LOW\"}]"},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-one-bad-item-rejects-all", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":\"m1\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"risk\",\"severity\":\"LOW\"},{\"id\":\"m2\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"nope\",\"severity\":\"LOW\"}]"},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-no-repair-trailing-prose", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "Sure! [{\"id\":\"m1\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"risk\",\"severity\":\"LOW\"}] Hope that helps."},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-no-repair-trailing-comma", "kind": "edge", "added": true,
+   "input": {"action": "parse", "text": "[{\"id\":\"m1\",\"name\":\"N\",\"query\":\"q\",\"domain\":\"risk\",\"severity\":\"LOW\"},]"},
+   "expected": {"raises": "UnparsableLLMResponse", "alerts": 1}},
+
+  {"name": "parse-missions-oversized", "kind": "oversized", "added": true,
+   "input": {"action": "parse_many", "n": 500},
+   "expected": {"count": 500, "alerts": 0}}
+]

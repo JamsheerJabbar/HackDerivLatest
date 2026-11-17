@@ -1,6 +1,6 @@
 import asyncio
 from langgraph.graph import StateGraph, END
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 from app.models.state import GraphState
 from app.modules.intent_classification import intent_module
 from app.modules.clarification import clarification_module
@@ -11,6 +11,9 @@ from app.modules.visualization import visualization_module
 from app.modules.insight_generation import insight_module
 from app.services.database import db_service
 from app.core.logger import logger
+from app.services.deterministic_fallback import DeterministicFallback
+from app.services.llm import LLMCallError, is_llm_failure
+from app.services.retry_policy import NonRetryable, RetriesExhausted, RetryPolicy
 
 # Node Definitions
 
@@ -41,6 +44,7 @@ async def classify_intent_node(state: GraphState) -> Dict[str, Any]:
         "relevant_columns": preproc_data["relevant_columns"],
         "few_shot_examples": preproc_data["few_shot_examples"],
         "entities": preproc_data["entities"], # Ensure entities are passed forward
+        "metric_candidates": preproc_data.get("metric_candidates"),
         "domain": domain
     }
 
@@ -59,30 +63,68 @@ async def generate_clarification_node(state: GraphState) -> Dict[str, Any]:
         "status": "needs_clarification"
     }
 
+class _Guidance(NonRetryable):
+    """The generator answered with guidance (not SQL, not a failure): never retried."""
+
+
+_fallback: Optional[DeterministicFallback] = None
+
+
+def get_fallback() -> DeterministicFallback:
+    """Lazily built deterministic fallback (catalog metric at >= FALLBACK_MIN_SIMILARITY, else error message)."""
+    global _fallback
+    if _fallback is None:
+        from app.modules.param_resolver import get_shared_resolver
+        _fallback = DeterministicFallback(
+            get_shared_resolver(),
+            lambda sql, bind: asyncio.to_thread(db_service.execute_logical, sql, bind))
+    return _fallback
+
+
 async def generate_sql_node(state: GraphState) -> Dict[str, Any]:
+    """Generate -> validate -> execute as ONE attempt; retry (max 3) with stronger models; then deterministic fallback."""
     logger.info("Node: [generate_sql]")
     query = state["user_question"]
     domain = state.get("domain", "general")
     context = {
-        "relevant_columns": state["relevant_columns"],
-        "few_shot_examples": state["few_shot_examples"],
+        "relevant_columns": state.get("relevant_columns", []),
+        "few_shot_examples": state.get("few_shot_examples", []),
         "entities": state.get("entities", {}), # Fixed: Pass resolved entities forward
         "domain": domain,
-        "conversation_history": state.get("conversation_history", [])
+        "conversation_history": state.get("conversation_history", []),
+        "reference_templates": state.get("reference_templates") or [],
     }
-    sql = await sql_generation_module.generate(query, context)
-    
-    # If the generator returned a guidance message (Error: ...)
-    if sql.startswith("Error:"):
-        logger.info(f"SQL Generator returned guidance instead of SQL: {sql[:50]}...")
-        return {
-            "generated_sql": None,
-            "clarification_question": sql.replace("Error:", "").strip(),
-            "status": "needs_clarification"
-        }
-        
-    logger.info(f"SQL Generated: {sql[:50]}...")
-    return {"generated_sql": sql}
+
+    async def attempt(model: str, n: int):
+        sql = await sql_generation_module.generate(query, {**context, "model_name": model})
+        if is_llm_failure(sql):
+            raise LLMCallError(sql)
+        if sql.startswith("Error"):
+            raise _Guidance(sql)
+        ok, err = validation_module.validate(sql)
+        if not ok:
+            raise ValueError(f"validation: {err}")
+        rows = await asyncio.to_thread(db_service.execute_params, sql, {})
+        return sql, rows
+
+    try:
+        res = await RetryPolicy().run(attempt, stage="sql_generation")
+        sql, rows = res.value
+        logger.info(f"SQL generated and executed on attempt {res.attempts} ({res.models_used[-1]}): {sql[:50]}...")
+        return {"generated_sql": sql, "query_result": rows, "status": "success"}
+    except _Guidance as g:
+        guidance = str(g)
+        logger.info(f"SQL Generator returned guidance instead of SQL: {guidance[:50]}...")
+        return {"generated_sql": None, "clarification_question": guidance.replace("Error:", "").strip(),
+                "status": "needs_clarification"}
+    except RetriesExhausted as e:
+        logger.warning(f"SQL generation exhausted {e.attempts} attempts; trying deterministic fallback")
+        fb = await get_fallback().handle(query)
+        if fb["status"] == "success":
+            return {"generated_sql": fb["sql"], "query_result": fb["results"], "status": "success",
+                    "fallback": "deterministic"}
+        return {"generated_sql": None, "query_result": None, "status": "failed",
+                "validation_error": fb["error"]}
 
 async def validate_sql_node(state: GraphState) -> Dict[str, Any]:
     logger.info("Node: [validate_sql]")
@@ -109,6 +151,8 @@ async def execute_query_node(state: GraphState) -> Dict[str, Any]:
     logger.info("Node: [execute_query]")
     sql = state["generated_sql"]
     try:
+        from app.modules.catalog.templates import assert_select_only
+        assert_select_only(sql)  # defense in depth: db_service.execute commits non-row statements
         results = db_service.execute(sql)
         logger.info(f"Query execution successful. Rows: {len(results)}")
         return {"query_result": results, "status": "success"}
@@ -265,15 +309,25 @@ workflow.add_edge("clarification", END)
 workflow.add_edge("guidance", END)
 
 def route_after_sql_generation(state: GraphState):
-    if state.get("status") == "needs_clarification":
+    if state.get("status") == "needs_clarification" or state.get("needs_clarification"):
         return "end"
-    return "validate_sql"
+    if state.get("status") == "success" and state.get("query_result") is not None:
+        return "present"  # already generated, validated and executed inside generate_sql
+    if state.get("status") == "failed":
+        return "format_response"
+    return "validate_sql"  # legacy path
+
+
+async def present_node(state: GraphState) -> Dict[str, Any]:
+    return {}
 
 workflow.add_conditional_edges(
     "generate_sql",
     route_after_sql_generation,
     {
         "validate_sql": "validate_sql",
+        "present": "present",
+        "format_response": "format_response",
         "end": END
     }
 )
@@ -289,6 +343,9 @@ workflow.add_conditional_edges(
 )
 
 workflow.add_edge("repair_sql", "validate_sql")
+workflow.add_node("present", present_node)
+workflow.add_edge("present", "recommend_visualization")
+workflow.add_edge("present", "insight_recommendation")
 workflow.add_edge("execute_query", "recommend_visualization")
 workflow.add_edge("execute_query", "insight_recommendation")
 

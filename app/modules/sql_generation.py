@@ -86,6 +86,10 @@ class SQLGenerationModule:
                 content = msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')
                 history_str += f"- {role.upper()}: {content}\n"
 
+        refs = context.get("reference_templates") or []
+        ref_str = ("Reference catalog SQL (parameterized templates for similar questions; adapt, do not copy blindly):\n"
+                   + "\n".join(f"- {r}" for r in refs[:3]) + "\n") if refs else ""
+
         prompt = f"""
 {domain_prompt}
 
@@ -95,6 +99,7 @@ class SQLGenerationModule:
 
 {columns_str}
 {entity_str}
+{ref_str}
 
 {f"Example Queries for {domain.upper()} domain:" if few_shot_str else ""}
 {few_shot_str}
@@ -116,7 +121,9 @@ User Request: {query}
 SQL Query:
 """
         from app.core.config import settings
-        response = await llm_service.generate_response(prompt, model_name=settings.SQL_MODEL)
+        # under RetryPolicy (model_name present) the policy is the only retry layer: no inner rate-limit loop
+        extra = {"internal_retries": 1} if context.get("model_name") else {}
+        response = await llm_service.generate_response(prompt, model_name=context.get("model_name") or settings.SQL_MODEL, **extra)
         
         # If the LLM explicitly returns an Error/Guidance message, return it as is.
         if response.startswith("Error"):

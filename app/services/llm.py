@@ -1,3 +1,4 @@
+import asyncio
 import time
 import google.generativeai as genai
 from app.core.config import settings
@@ -39,15 +40,18 @@ class LLMService:
             self.model = None
 
     async def _call_openai(self, prompt: str, model_override: str = None) -> str:
-        # Simple wrapper for OpenAI ChatCompletion
-        response = openai.ChatCompletion.create(
+        # Simple wrapper for OpenAI ChatCompletion (sync client: run in a worker thread, not on the event loop)
+        response = await asyncio.to_thread(
+            openai.ChatCompletion.create,
             model=model_override or self.model_name,
             messages=[{"role": "system", "content": prompt}],
             temperature=0.0,
         )
         return response.choices[0].message.content
 
-    async def generate_response(self, prompt: str, model_name: str = None) -> str:
+    async def generate_response(self, prompt: str, model_name: str = None, internal_retries: int = 3) -> str:
+        """internal_retries: provider rate-limit attempts inside this call. Callers that run under RetryPolicy pass 1
+        so the policy (max 3 attempts, model escalation) is the only retry layer."""
         if not self.provider:
             logger.error("LLM Service not configured (no API key found).")
             return "LLM Service not configured."
@@ -57,7 +61,7 @@ class LLMService:
         
         # Retry logic for rate‑limit (429) – up to 3 attempts
         attempts = 0
-        while attempts < 3:
+        while attempts < internal_retries:
             try:
                 if self.provider == "openai":
                     res = await self._call_openai(prompt, model_override=selected_model)
@@ -75,7 +79,7 @@ class LLMService:
                             ]
                         )
                     
-                    response = model_to_use.generate_content(prompt)
+                    response = await asyncio.to_thread(model_to_use.generate_content, prompt)  # keep the event loop free
                     
                     # Handle safety blocks
                     if not response.candidates or response.candidates[0].finish_reason != 1: # 1 = STOP (Success)
@@ -92,13 +96,73 @@ class LLMService:
                 err_msg = str(e).lower()
                 if "429" in err_msg or "rate limit" in err_msg or "quota" in err_msg:
                     attempts += 1
+                    if attempts >= internal_retries:
+                        break
                     wait = 2 ** attempts
                     logger.warning(f"LLM rate limit encountered, retrying in {wait}s (attempt {attempts})")
-                    time.sleep(wait)
+                    await asyncio.sleep(wait)
                     continue
                 logger.error(f"LLM Error: {str(e)}")
                 return f"Error generating response: {str(e)}"
         logger.error("LLM service rate limit exceeded after multiple retries.")
         return "Error: LLM service rate limit exceeded after multiple retries."
+
+
+
+# ─── Strict, one-shot structured output ─────────────────────────────────────
+
+class LLMCallError(Exception):
+    """The LLM call itself failed (provider error, rate limit, safety block, not configured)."""
+
+
+class UnparsableLLMResponse(Exception):
+    def __init__(self, stage: str, raw: str, error: str):
+        super().__init__(f"[{stage}] unparsable LLM response: {error}")
+        self.stage, self.raw, self.error = stage, (raw or "")[:500], error
+
+
+_LLM_FAILURE_PREFIXES = ("Error generating response", "Error: LLM service rate limit", "Error: Response blocked")
+
+
+def is_llm_failure(text: str) -> bool:
+    t = (text or "").strip()
+    return t.startswith(_LLM_FAILURE_PREFIXES) or t == "LLM Service not configured."
+
+
+def parse_llm_json(text: str, schema=None, *, stage: str = "llm"):
+    """Parse an LLM reply exactly once: a single JSON object, optionally in one ```json fence.
+
+    Failure raises UnparsableLLMResponse and emits a backend alert; there is no repair or retry here.
+    """
+    import json
+    import re
+    from app.services.backend_alerts import emit_backend_alert
+    try:
+        t = (text or "").strip()
+        fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", t, re.S)
+        data = json.loads(fence.group(1) if fence else t)
+        if not isinstance(data, dict):
+            raise ValueError("expected a JSON object")
+        return schema.model_validate(data) if schema is not None else data
+    except Exception as e:
+        emit_backend_alert("unparsable_llm_response", f"{stage}: {e}", stage=stage, raw=(text or "")[:500])
+        raise UnparsableLLMResponse(stage, text, str(e)) from e
+
+
+async def generate_text(prompt: str, model_name: str = None, llm=None) -> str:
+    llm = llm or llm_service
+    try:
+        out = await llm.generate_response(prompt, model_name=model_name)
+    except Exception as e:
+        raise LLMCallError(str(e)) from e
+    if is_llm_failure(out):
+        raise LLMCallError(out)
+    return out
+
+
+async def generate_structured(prompt: str, schema, *, stage: str, model_name: str = None, llm=None):
+    """One LLM call, one parse."""
+    return parse_llm_json(await generate_text(prompt, model_name, llm), schema, stage=stage)
+
 
 llm_service = LLMService()

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Bar, Line } from 'react-chartjs-2';
 import ReactMarkdown from 'react-markdown';
+import AuthEventSource from './authEventSource';
+import HandoffChat from './HandoffChat';
 import './SentinelDashboard.css';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -37,6 +39,7 @@ interface Detection {
     results?: any[];
     visualization_config?: any;
     insight?: string;
+    insight_id?: string;
     recommendation?: string | string[];
     timestamp: string;
     depth?: number;
@@ -95,6 +98,24 @@ interface SentinelDashboardProps {
     onBackToLive?: () => void;
 }
 
+const SENTINEL_API = 'http://localhost:8080/api/v1/sentinel';
+
+function authHeaders(): Record<string, string> {
+    const token = localStorage.getItem('auth_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+interface AnomalyStatus {
+    flagged: boolean;
+    false_count: number;
+    threshold: number;
+}
+
+interface RatingState {
+    rating: boolean;
+    threadId: string | null;
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function SentinelDashboard({ historicalScan, onBackToLive }: SentinelDashboardProps) {
@@ -109,7 +130,39 @@ export default function SentinelDashboard({ historicalScan, onBackToLive }: Sent
     const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
     const [liveLogFeedOpen, setLiveLogFeedOpen] = useState(true);
     const [streamingLogs, setStreamingLogs] = useState<StreamingLog[]>([]);
-    const eventSourceRef = useRef<EventSource | null>(null);
+    const [ratings, setRatings] = useState<Record<string, RatingState>>({});
+    const [anomaly, setAnomaly] = useState<AnomalyStatus | null>(null);
+    const [openThread, setOpenThread] = useState<string | null>(null);
+
+    const refreshAnomaly = async (detect = false) => {
+        try {
+            const res = await fetch(`${SENTINEL_API}/insights/anomaly${detect ? '/detect' : ''}`, {
+                method: detect ? 'POST' : 'GET',
+                headers: authHeaders(),
+            });
+            if (res.ok) setAnomaly(await res.json());
+        } catch {
+            /* anomaly status is optional UI */
+        }
+    };
+
+    useEffect(() => {
+        refreshAnomaly();
+    }, []);
+
+    const rateInsight = async (insightId: string, rating: boolean) => {
+        const res = await fetch(`${SENTINEL_API}/insights/${insightId}/rating`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ rating }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setRatings(prev => ({ ...prev, [insightId]: { rating, threadId: data.thread_id ?? null } }));
+        if (data.anomaly) setAnomaly(data.anomaly);
+        if (!rating && data.thread_id) setOpenThread(data.thread_id);
+    };
+    const eventSourceRef = useRef<AuthEventSource | null>(null);
     const liveFeedRef = useRef<HTMLDivElement | null>(null);
 
     const toggleLogs = (missionId: string) => {
@@ -137,7 +190,7 @@ export default function SentinelDashboard({ historicalScan, onBackToLive }: Sent
             eventSourceRef.current.close();
         }
 
-        const es = new EventSource('http://localhost:8080/api/v1/sentinel/scan/stream');
+        const es = new AuthEventSource('http://localhost:8080/api/v1/sentinel/scan/stream');
         eventSourceRef.current = es;
 
         es.addEventListener('scan_started', (e) => {
@@ -165,6 +218,12 @@ export default function SentinelDashboard({ historicalScan, onBackToLive }: Sent
 
         es.addEventListener('scan_complete', () => {
             setPhase('analyzing');
+        });
+
+        // Insight ids arrive after persistence so each insight can be rated
+        es.addEventListener('insights_saved', (e) => {
+            const { insight_ids } = JSON.parse(e.data) as { insight_ids: Record<string, string> };
+            setDetections(prev => prev.map(d => (insight_ids[d.mission_id] ? { ...d, insight_id: insight_ids[d.mission_id] } : d)));
         });
 
         es.addEventListener('deep_dive_started', (e) => {
@@ -324,6 +383,20 @@ export default function SentinelDashboard({ historicalScan, onBackToLive }: Sent
                     <div className="compact-insight">
                         <ReactMarkdown>{det.insight || 'Analyzing...'}</ReactMarkdown>
                     </div>
+                    {det.insight_id && (
+                        <div className="insight-rating">
+                            <span>Was this insight correct?</span>
+                            <button className={ratings[det.insight_id]?.rating === true ? 'active' : ''}
+                                    onClick={() => rateInsight(det.insight_id!, true)} aria-label="Insight is correct">👍</button>
+                            <button className={ratings[det.insight_id]?.rating === false ? 'active' : ''}
+                                    onClick={() => rateInsight(det.insight_id!, false)} aria-label="Insight is incorrect">👎</button>
+                            {ratings[det.insight_id]?.threadId && (
+                                <button className="review-badge" onClick={() => setOpenThread(ratings[det.insight_id!].threadId)}>
+                                    Under human review – open chat
+                                </button>
+                            )}
+                        </div>
+                    )}
                     {det.recommendation && (
                         <div className="mini-rec">
                             <strong>Protocol:</strong>{' '}
@@ -431,9 +504,18 @@ export default function SentinelDashboard({ historicalScan, onBackToLive }: Sent
                         </div>
                     )}
                     {!isHistorical && (
+                        <>
+                        <button
+                            className={`anomaly-btn ${anomaly?.flagged ? 'flagged' : ''}`}
+                            onClick={() => refreshAnomaly(true)}
+                            title="Flags an anomaly when more than 3 insights were rated incorrect"
+                        >
+                            Insight Anomaly Detection{anomaly ? ` (${anomaly.false_count}/${anomaly.threshold}${anomaly.flagged ? ' – FLAGGED' : ''})` : ''}
+                        </button>
                         <button onClick={runScan} className="refresh-btn" disabled={phase !== 'complete' && phase !== 'idle' && phase !== 'error'}>
                             {phase === 'complete' || phase === 'idle' || phase === 'error' ? 'New Scan' : 'Scanning...'}
                         </button>
+                        </>
                     )}
                 </div>
             </div>
@@ -626,6 +708,7 @@ export default function SentinelDashboard({ historicalScan, onBackToLive }: Sent
                     </div>
                 </>
             )}
+            {openThread && <HandoffChat threadId={openThread} onClose={() => setOpenThread(null)} />}
         </div>
     );
 }

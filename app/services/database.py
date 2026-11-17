@@ -6,7 +6,18 @@ from app.core.logger import logger
 
 class DatabaseService:
     def __init__(self):
-        self.engine = create_engine(settings.DATABASE_URL)
+        kw = {}
+        if settings.DATABASE_URL in ("sqlite://", "sqlite:///:memory:"):
+            # in-memory SQLite is per-connection: share one connection so worker threads see the same data
+            from sqlalchemy.pool import StaticPool
+            kw = {"connect_args": {"check_same_thread": False}, "poolclass": StaticPool}
+        self.engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, **kw)
+        if self.engine.dialect.name == "sqlite":
+            from sqlalchemy import event
+            from app.core.schema_mapping import register_sqlite_functions
+            event.listen(self.engine, "connect", register_sqlite_functions)  # norm_ts() for legacy text timestamps
+        self._mapping = None
+        self._rewrite_cache: Dict[str, Any] = {}
         logger.info(f"DatabaseService initialized with engine: {settings.DATABASE_URL.split('///')[-1]}")
         self.initialize_db()
 
@@ -16,7 +27,11 @@ class DatabaseService:
             inspector = inspect(self.engine)
             if not inspector.has_table("users"):
                 print("Initializing database schema...")
-                self._execute_sql_file(settings.SCHEMA_PATH)
+                if self.engine.dialect.name == "postgresql":
+                    from app.files.migrate_to_postgres import create_schema
+                    create_schema(self.engine)
+                else:
+                    self._execute_sql_file(settings.SCHEMA_PATH)
                 print("Schema initialized.")
         except Exception as e:
             print(f"Error initializing database: {e}")
@@ -66,6 +81,45 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"DATABASE EXECUTION ERROR: {str(e)} | Query: {sql}")
             return []
+
+    def execute_params(self, sql: str, bind: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Execute a single SELECT with bound parameters. Unlike execute(), errors are raised."""
+        import sqlglot
+        from sqlglot import exp
+        trees = sqlglot.parse(sql)
+        if len(trees) != 1 or not isinstance(trees[0], (exp.Select, exp.Union)):
+            raise ValueError("only a single SELECT statement is allowed")
+        with self.engine.connect() as conn:
+            return [dict(r) for r in conn.execute(text(sql), bind or {}).mappings()]
+
+    # ── logical (catalog) SQL -> whatever physical schema this database has ──────────
+    @property
+    def mapping(self):
+        """SchemaMapping for this database (introspected once; call reset_mapping() after schema changes)."""
+        if self._mapping is None:
+            from app.core.schema_mapping import mapping_for_engine
+            self._mapping = mapping_for_engine(self.engine)
+            logger.info(f"Schema mapping profile: {self._mapping.profile_name}")
+        return self._mapping
+
+    def reset_mapping(self) -> None:
+        self._mapping = None
+        self._rewrite_cache.clear()
+
+    def execute_logical(self, sql: str, bind: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Execute catalog SQL written against the canonical schema: rewrite to the physical schema, then
+        run it as a bound SELECT. Raises UnavailableColumn when the database lacks something the SQL needs."""
+        rw = self._rewrite_cache.get(sql)
+        if rw is None:
+            rw = self._rewrite_cache[sql] = self.mapping.rewrite_sql(sql)
+        return self.execute_params(rw.sql, rw.apply_bind(bind))
+
+    def available_metric_ids(self, catalog: Dict[str, Any]):
+        """Catalog metric ids that can run on this database (others lack tables/columns)."""
+        return self.mapping.available_ids(catalog)
+
+    def unavailable_metric_reasons(self, catalog: Dict[str, Any]) -> Dict[str, str]:
+        return self.mapping.unavailable_reasons(catalog)
 
     def get_schema_info(self) -> List[str]:
         """Returns a list of 'table.column' strings for all tables in the database."""

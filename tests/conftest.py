@@ -1,6 +1,8 @@
 import pytest
 import asyncio
 import os
+os.environ.setdefault("EMBEDDING_BACKEND", "hash")  # no model download in tests
+os.environ.setdefault("GEMINI_API_KEY", "test-key-not-real")  # app.main builds Gemini clients at import
 from unittest.mock import AsyncMock, MagicMock
 from app.core.config import settings
 

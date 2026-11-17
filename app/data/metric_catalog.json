@@ -1,0 +1,4610 @@
+{
+  "version": "v1-6f34a2dd",
+  "generated_at": "2026-11-17T15:33:00.155991+00:00",
+  "metrics": [
+    {
+      "id": "flagged_txn_count",
+      "name": "Flagged transaction count",
+      "domain": "risk",
+      "description": "Number of transactions flagged as suspicious in the window.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.status",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) WHERE status='FLAGGED'",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS flagged_count FROM transactions WHERE status = 'FLAGGED' AND created_at >= :since",
+      "interpretation": "A rising count signals fraud or rule tuning issues; compare with total volume for a rate.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "suspicious transactions",
+        "flagged payments"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_status (status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "flagged",
+        "payments",
+        "suspicious",
+        "transaction",
+        "transactions"
+      ],
+      "example_queries": [
+        "show flagged transaction count",
+        "what is the flagged transaction count",
+        "flagged transaction count please",
+        "show me suspicious transactions",
+        "show me flagged payments",
+        "flagged transaction count in the last 7 days",
+        "flagged transaction count last 30 days",
+        "suspicious transactions in the last 24 hours"
+      ]
+    },
+    {
+      "id": "txn_volume_usd",
+      "name": "Completed transaction volume (USD)",
+      "domain": "operations",
+      "description": "Total USD value of completed transactions in the window.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.amount_usd",
+        "transactions.status",
+        "transactions.created_at"
+      ],
+      "formula": "SUM(amount_usd) WHERE status='COMPLETED'",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT SUM(amount_usd) AS volume_usd FROM transactions WHERE status = 'COMPLETED' AND created_at >= :since",
+      "interpretation": "Business throughput; sharp drops hint at outages, spikes at campaigns or abuse.",
+      "direction": "higher_is_better",
+      "synonyms": [
+        "total volume",
+        "transaction value",
+        "money moved"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_status (status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "completed",
+        "money",
+        "moved",
+        "total",
+        "transaction",
+        "usd",
+        "value",
+        "volume"
+      ],
+      "example_queries": [
+        "show completed transaction volume (usd)",
+        "what is the completed transaction volume (usd)",
+        "completed transaction volume (usd) please",
+        "show me total volume",
+        "show me transaction value",
+        "show me money moved",
+        "completed transaction volume (usd) in the last 7 days",
+        "completed transaction volume (usd) last 30 days",
+        "total volume in the last 24 hours"
+      ]
+    },
+    {
+      "id": "failed_txn_rate",
+      "name": "Failed transaction rate",
+      "domain": "operations",
+      "description": "Share of transactions that failed in the window.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.status",
+        "transactions.created_at"
+      ],
+      "formula": "failed / total",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS failed_rate FROM transactions WHERE created_at >= :since",
+      "interpretation": "Above a few percent suggests payment provider or validation problems.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "transaction failure rate",
+        "payment failures"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_created_at (created_at>?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "failed",
+        "failure",
+        "failures",
+        "payment",
+        "rate",
+        "transaction"
+      ],
+      "example_queries": [
+        "show failed transaction rate",
+        "what is the failed transaction rate",
+        "failed transaction rate please",
+        "show me transaction failure rate",
+        "show me payment failures",
+        "failed transaction rate in the last 7 days",
+        "failed transaction rate last 30 days",
+        "transaction failure rate in the last 24 hours"
+      ]
+    },
+    {
+      "id": "avg_txn_amount_by_type",
+      "name": "Average transaction amount by type",
+      "domain": "operations",
+      "description": "Mean USD amount per transaction type.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.txn_type",
+        "transactions.amount_usd",
+        "transactions.created_at"
+      ],
+      "formula": "AVG(amount_usd) GROUP BY txn_type",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT txn_type, AVG(amount_usd) AS avg_amount_usd FROM transactions WHERE created_at >= :since GROUP BY txn_type",
+      "interpretation": "Shows typical ticket size per activity; outlying types deserve review.",
+      "direction": "neutral",
+      "synonyms": [
+        "average deposit",
+        "average withdrawal",
+        "ticket size"
+      ],
+      "explain": [
+        "SCAN transactions USING INDEX idx_txn_type"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "amount",
+        "average",
+        "deposit",
+        "size",
+        "ticket",
+        "transaction",
+        "type",
+        "withdrawal"
+      ],
+      "example_queries": [
+        "show average transaction amount by type",
+        "what is the average transaction amount by type",
+        "average transaction amount by type please",
+        "show me average deposit",
+        "show me average withdrawal",
+        "show me ticket size",
+        "average transaction amount by type in the last 7 days",
+        "average transaction amount by type last 30 days",
+        "average deposit in the last 24 hours"
+      ]
+    },
+    {
+      "id": "large_txn_count",
+      "name": "Large transaction count",
+      "domain": "risk",
+      "description": "Transactions above a USD threshold (default matches RULE-001: 50000).",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.amount_usd",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) WHERE amount_usd > :min_amount",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "min_amount",
+          "type": "float",
+          "default": 50000.0,
+          "min": 0,
+          "max": 1000000000.0
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS large_txn_count FROM transactions WHERE amount_usd > :min_amount AND created_at >= :since",
+      "interpretation": "Large movements need AML review; trend matters more than single counts.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "big transactions",
+        "high value transactions"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_created_at (created_at>?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "big",
+        "count",
+        "high",
+        "large",
+        "transaction",
+        "transactions",
+        "value"
+      ],
+      "example_queries": [
+        "show large transaction count",
+        "what is the large transaction count",
+        "large transaction count please",
+        "show me big transactions",
+        "show me high value transactions",
+        "large transaction count in the last 7 days",
+        "large transaction count last 30 days",
+        "big transactions in the last 24 hours"
+      ]
+    },
+    {
+      "id": "top_users_by_txn_count",
+      "name": "Most active users by transactions",
+      "domain": "risk",
+      "description": "Users with the highest transaction counts in the window.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.user_id",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY user_id ORDER BY 1 DESC",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT user_id, COUNT(*) AS txn_count FROM transactions WHERE created_at >= :since GROUP BY user_id ORDER BY txn_count DESC LIMIT :limit",
+      "interpretation": "Very high counts can indicate bots, velocity abuse or power users.",
+      "direction": "neutral",
+      "synonyms": [
+        "busiest users",
+        "velocity",
+        "most active traders"
+      ],
+      "explain": [
+        "SCAN transactions USING COVERING INDEX idx_txn_user_created",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "active",
+        "busiest",
+        "most",
+        "traders",
+        "transactions",
+        "users",
+        "velocity"
+      ],
+      "example_queries": [
+        "show most active users by transactions",
+        "what is the most active users by transactions",
+        "most active users by transactions please",
+        "show me busiest users",
+        "show me velocity",
+        "show me most active traders",
+        "most active users by transactions in the last 7 days",
+        "most active users by transactions last 30 days",
+        "busiest users in the last 24 hours"
+      ]
+    },
+    {
+      "id": "structuring_candidates",
+      "name": "Structuring candidates",
+      "domain": "compliance",
+      "description": "Users with repeated deposits just below the reporting threshold (RULE-007).",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.user_id",
+        "transactions.txn_type",
+        "transactions.amount_usd",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) WHERE DEPOSIT AND amount BETWEEN 9000 AND 10000 HAVING >= 3",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "min_count",
+          "type": "int",
+          "default": 3,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT user_id, COUNT(*) AS deposit_count FROM transactions WHERE txn_type = 'DEPOSIT' AND amount_usd >= 9000 AND amount_usd <= 10000 AND created_at >= :since GROUP BY user_id HAVING COUNT(*) >= :min_count",
+      "interpretation": "Classic structuring pattern; each listed user should be escalated to compliance.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "structuring",
+        "smurfing",
+        "deposits below threshold"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_type (txn_type=?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "below",
+        "candidates",
+        "deposits",
+        "smurfing",
+        "structuring",
+        "threshold"
+      ],
+      "example_queries": [
+        "show structuring candidates",
+        "what is the structuring candidates",
+        "structuring candidates please",
+        "show me structuring",
+        "show me smurfing",
+        "show me deposits below threshold",
+        "structuring candidates in the last 7 days",
+        "structuring candidates last 30 days",
+        "structuring in the last 24 hours"
+      ]
+    },
+    {
+      "id": "flagged_txn_by_country",
+      "name": "Flagged transactions by user country",
+      "domain": "risk",
+      "description": "Flagged transactions grouped by the user's country.",
+      "tables": [
+        "transactions",
+        "users"
+      ],
+      "joins": [
+        {
+          "left": "transactions",
+          "right": "users",
+          "on": "transactions.user_id = users.user_id"
+        }
+      ],
+      "columns": [
+        "transactions.status",
+        "transactions.created_at",
+        "transactions.user_id",
+        "users.user_id",
+        "users.country"
+      ],
+      "formula": "COUNT(*) JOIN users GROUP BY country",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT users.country, COUNT(*) AS flagged_count FROM transactions JOIN users ON transactions.user_id = users.user_id WHERE transactions.status = 'FLAGGED' AND transactions.created_at >= :since GROUP BY users.country ORDER BY flagged_count DESC",
+      "interpretation": "Concentration in a country points to regional fraud or sanctions exposure.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "flagged by country",
+        "suspicious activity by region"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_status (status=?)",
+        "SEARCH users USING INDEX sqlite_autoindex_users_1 (user_id=?)",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "activity",
+        "country",
+        "flagged",
+        "region",
+        "suspicious",
+        "transactions",
+        "user"
+      ],
+      "example_queries": [
+        "show flagged transactions by user country",
+        "what is the flagged transactions by user country",
+        "flagged transactions by user country please",
+        "show me flagged by country",
+        "show me suspicious activity by region",
+        "flagged transactions by user country in the last 7 days",
+        "flagged transactions by user country last 30 days",
+        "flagged by country in the last 24 hours"
+      ]
+    },
+    {
+      "id": "high_risk_user_volume",
+      "name": "Transaction volume of high-risk users",
+      "domain": "risk",
+      "description": "USD volume transacted by users with a HIGH risk level.",
+      "tables": [
+        "transactions",
+        "users"
+      ],
+      "joins": [
+        {
+          "left": "transactions",
+          "right": "users",
+          "on": "transactions.user_id = users.user_id"
+        }
+      ],
+      "columns": [
+        "users.risk_level",
+        "users.user_id",
+        "transactions.user_id",
+        "transactions.amount_usd",
+        "transactions.created_at"
+      ],
+      "formula": "SUM(amount_usd) JOIN users WHERE risk_level='HIGH'",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT SUM(transactions.amount_usd) AS high_risk_volume_usd FROM users JOIN transactions ON transactions.user_id = users.user_id WHERE users.risk_level = 'HIGH' AND transactions.created_at >= :since",
+      "interpretation": "Share of volume from high-risk customers; growth increases exposure.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "high risk volume",
+        "risky customer volume"
+      ],
+      "explain": [
+        "SEARCH users USING INDEX idx_users_risk_level (risk_level=?)",
+        "SEARCH transactions USING INDEX idx_txn_user_created (user_id=? AND created_at>?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "customer",
+        "high",
+        "risk",
+        "risky",
+        "transaction",
+        "users",
+        "volume"
+      ],
+      "example_queries": [
+        "show transaction volume of high-risk users",
+        "what is the transaction volume of high-risk users",
+        "transaction volume of high-risk users please",
+        "show me high risk volume",
+        "show me risky customer volume",
+        "transaction volume of high-risk users in the last 7 days",
+        "transaction volume of high-risk users last 30 days",
+        "high risk volume in the last 24 hours"
+      ]
+    },
+    {
+      "id": "pep_transaction_volume",
+      "name": "PEP transaction volume",
+      "domain": "compliance",
+      "description": "USD volume of politically exposed persons.",
+      "tables": [
+        "transactions",
+        "users"
+      ],
+      "joins": [
+        {
+          "left": "transactions",
+          "right": "users",
+          "on": "transactions.user_id = users.user_id"
+        }
+      ],
+      "columns": [
+        "users.is_pep",
+        "users.user_id",
+        "transactions.user_id",
+        "transactions.amount_usd",
+        "transactions.created_at"
+      ],
+      "formula": "SUM(amount_usd) JOIN users WHERE is_pep",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT SUM(transactions.amount_usd) AS pep_volume_usd FROM users JOIN transactions ON transactions.user_id = users.user_id WHERE users.is_pep = TRUE AND transactions.created_at >= :since",
+      "interpretation": "PEP activity requires enhanced due diligence.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "politically exposed persons volume",
+        "pep activity"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_created_at (created_at>?)",
+        "SEARCH users USING INDEX sqlite_autoindex_users_1 (user_id=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "activity",
+        "exposed",
+        "pep",
+        "persons",
+        "politically",
+        "transaction",
+        "volume"
+      ],
+      "example_queries": [
+        "show pep transaction volume",
+        "what is the pep transaction volume",
+        "pep transaction volume please",
+        "show me politically exposed persons volume",
+        "show me pep activity",
+        "pep transaction volume in the last 7 days",
+        "pep transaction volume last 30 days",
+        "politically exposed persons volume in the last 24 hours"
+      ]
+    },
+    {
+      "id": "unverified_deposit_users",
+      "name": "Unverified users with deposits",
+      "domain": "compliance",
+      "description": "Distinct users who deposited without verified KYC.",
+      "tables": [
+        "transactions",
+        "users"
+      ],
+      "joins": [
+        {
+          "left": "transactions",
+          "right": "users",
+          "on": "transactions.user_id = users.user_id"
+        }
+      ],
+      "columns": [
+        "users.kyc_status",
+        "users.user_id",
+        "transactions.user_id",
+        "transactions.txn_type",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(DISTINCT user_id) WHERE kyc_status != 'VERIFIED' AND DEPOSIT",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT COUNT(DISTINCT users.user_id) AS unverified_depositors FROM users JOIN transactions ON transactions.user_id = users.user_id WHERE users.kyc_status <> 'VERIFIED' AND transactions.txn_type = 'DEPOSIT' AND transactions.created_at >= :since",
+      "interpretation": "Any non-zero value is a KYC control gap.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "deposits without kyc",
+        "unverified depositors"
+      ],
+      "explain": [
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SEARCH transactions USING INDEX idx_txn_type (txn_type=?)",
+        "SEARCH users USING INDEX sqlite_autoindex_users_1 (user_id=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "depositors",
+        "deposits",
+        "kyc",
+        "unverified",
+        "users",
+        "with",
+        "without"
+      ],
+      "example_queries": [
+        "show unverified users with deposits",
+        "what is the unverified users with deposits",
+        "unverified users with deposits please",
+        "show me deposits without kyc",
+        "show me unverified depositors",
+        "unverified users with deposits in the last 7 days",
+        "unverified users with deposits last 30 days",
+        "deposits without kyc in the last 24 hours"
+      ]
+    },
+    {
+      "id": "txn_by_instrument_volume",
+      "name": "Volume by instrument",
+      "domain": "operations",
+      "description": "USD volume per traded instrument.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.instrument",
+        "transactions.amount_usd",
+        "transactions.created_at"
+      ],
+      "formula": "SUM(amount_usd) GROUP BY instrument",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT instrument, SUM(amount_usd) AS volume_usd FROM transactions WHERE created_at >= :since AND instrument IS NOT NULL GROUP BY instrument ORDER BY volume_usd DESC LIMIT :limit",
+      "interpretation": "Shows where trading demand and concentration risk sit.",
+      "direction": "neutral",
+      "synonyms": [
+        "top instruments",
+        "popular markets"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_instrument (instrument>?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "instrument",
+        "instruments",
+        "markets",
+        "popular",
+        "top",
+        "volume"
+      ],
+      "example_queries": [
+        "show volume by instrument",
+        "what is the volume by instrument",
+        "volume by instrument please",
+        "show me top instruments",
+        "show me popular markets",
+        "volume by instrument in the last 7 days",
+        "volume by instrument last 30 days",
+        "top instruments in the last 24 hours"
+      ]
+    },
+    {
+      "id": "payment_method_failure_rate",
+      "name": "Failure rate by payment method",
+      "domain": "operations",
+      "description": "Share of failed transactions per payment method.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.payment_method",
+        "transactions.status",
+        "transactions.created_at"
+      ],
+      "formula": "failed / total GROUP BY payment_method",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT payment_method, SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS failed_rate FROM transactions WHERE created_at >= :since AND payment_method IS NOT NULL GROUP BY payment_method",
+      "interpretation": "A method with a high failure rate needs provider investigation.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "payment method failures",
+        "failed payments by method"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "failed",
+        "failure",
+        "failures",
+        "method",
+        "payment",
+        "payments",
+        "rate"
+      ],
+      "example_queries": [
+        "show failure rate by payment method",
+        "what is the failure rate by payment method",
+        "failure rate by payment method please",
+        "show me payment method failures",
+        "show me failed payments by method",
+        "failure rate by payment method in the last 7 days",
+        "failure rate by payment method last 30 days",
+        "payment method failures in the last 24 hours"
+      ]
+    },
+    {
+      "id": "daily_txn_trend",
+      "name": "Daily transaction trend",
+      "domain": "operations",
+      "description": "Transactions and USD volume per day.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.created_at",
+        "transactions.amount_usd"
+      ],
+      "formula": "COUNT(*), SUM(amount_usd) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS txn_count, SUM(amount_usd) AS volume_usd FROM transactions WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Use for trend and seasonality; sudden breaks suggest incidents.",
+      "direction": "neutral",
+      "synonyms": [
+        "transactions per day",
+        "daily volume trend"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "daily",
+        "day",
+        "per",
+        "transaction",
+        "transactions",
+        "trend",
+        "volume"
+      ],
+      "example_queries": [
+        "show daily transaction trend",
+        "what is the daily transaction trend",
+        "daily transaction trend please",
+        "show me transactions per day",
+        "show me daily volume trend",
+        "daily transaction trend in the last 7 days",
+        "daily transaction trend last 30 days",
+        "transactions per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "high_risk_user_count",
+      "name": "High-risk user count",
+      "domain": "risk",
+      "description": "Users currently rated HIGH risk.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.risk_level"
+      ],
+      "formula": "COUNT(*) WHERE risk_level='HIGH'",
+      "parameters": [],
+      "sql": "SELECT COUNT(*) AS high_risk_users FROM users WHERE risk_level = 'HIGH'",
+      "interpretation": "Rising count means growing risk exposure in the customer base.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "risky users",
+        "high risk customers"
+      ],
+      "explain": [
+        "SEARCH users USING COVERING INDEX idx_users_risk_level (risk_level=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "customers",
+        "high",
+        "risk",
+        "risky",
+        "user",
+        "users"
+      ],
+      "example_queries": [
+        "show high-risk user count",
+        "what is the high-risk user count",
+        "high-risk user count please",
+        "show me risky users",
+        "show me high risk customers"
+      ]
+    },
+    {
+      "id": "kyc_status_distribution",
+      "name": "KYC status distribution",
+      "domain": "compliance",
+      "description": "Users per KYC status.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.kyc_status"
+      ],
+      "formula": "COUNT(*) GROUP BY kyc_status",
+      "parameters": [],
+      "sql": "SELECT kyc_status, COUNT(*) AS user_count FROM users GROUP BY kyc_status",
+      "interpretation": "A large PENDING or EXPIRED share is a compliance backlog.",
+      "direction": "neutral",
+      "synonyms": [
+        "kyc breakdown",
+        "verification status"
+      ],
+      "explain": [
+        "SCAN users USING COVERING INDEX idx_users_kyc_status"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "breakdown",
+        "distribution",
+        "kyc",
+        "status",
+        "verification"
+      ],
+      "example_queries": [
+        "show kyc status distribution",
+        "what is the kyc status distribution",
+        "kyc status distribution please",
+        "show me kyc breakdown",
+        "show me verification status"
+      ]
+    },
+    {
+      "id": "pep_user_count",
+      "name": "PEP user count",
+      "domain": "compliance",
+      "description": "Number of users flagged as politically exposed.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.is_pep"
+      ],
+      "formula": "COUNT(*) WHERE is_pep",
+      "parameters": [],
+      "sql": "SELECT COUNT(*) AS pep_users FROM users WHERE is_pep = TRUE",
+      "interpretation": "PEPs require enhanced monitoring. Note: is_pep is not indexed, so this scans users.",
+      "direction": "neutral",
+      "synonyms": [
+        "pep users",
+        "politically exposed users"
+      ],
+      "explain": [
+        "SCAN users"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "count",
+        "exposed",
+        "pep",
+        "politically",
+        "user",
+        "users"
+      ],
+      "example_queries": [
+        "show pep user count",
+        "what is the pep user count",
+        "pep user count please",
+        "show me pep users",
+        "show me politically exposed users"
+      ]
+    },
+    {
+      "id": "restricted_account_count",
+      "name": "Suspended or frozen accounts",
+      "domain": "compliance",
+      "description": "Accounts in SUSPENDED or FROZEN state.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.account_status"
+      ],
+      "formula": "COUNT(*) WHERE account_status IN (...)",
+      "parameters": [],
+      "sql": "SELECT account_status, COUNT(*) AS account_count FROM users WHERE account_status = 'SUSPENDED' OR account_status = 'FROZEN' GROUP BY account_status",
+      "interpretation": "Reflects enforcement actions; spikes indicate incidents or policy changes.",
+      "direction": "neutral",
+      "synonyms": [
+        "frozen accounts",
+        "suspended accounts"
+      ],
+      "explain": [
+        "SEARCH users USING COVERING INDEX idx_users_account_status (account_status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "accounts",
+        "frozen",
+        "suspended"
+      ],
+      "example_queries": [
+        "show suspended or frozen accounts",
+        "what is the suspended or frozen accounts",
+        "suspended or frozen accounts please",
+        "show me frozen accounts",
+        "show me suspended accounts"
+      ]
+    },
+    {
+      "id": "new_users_by_country",
+      "name": "New users by country",
+      "domain": "operations",
+      "description": "Registrations per country in the window.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.country",
+        "users.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY country",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT country, COUNT(*) AS new_users FROM users WHERE created_at >= :since GROUP BY country ORDER BY new_users DESC",
+      "interpretation": "Growth hotspots; sudden single-country surges can be abuse.",
+      "direction": "higher_is_better",
+      "synonyms": [
+        "signups by country",
+        "new registrations"
+      ],
+      "explain": [
+        "SCAN users USING INDEX idx_users_country",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "country",
+        "new",
+        "registrations",
+        "signups",
+        "users"
+      ],
+      "example_queries": [
+        "show new users by country",
+        "what is the new users by country",
+        "new users by country please",
+        "show me signups by country",
+        "show me new registrations",
+        "new users by country in the last 7 days",
+        "new users by country last 30 days",
+        "signups by country in the last 24 hours"
+      ]
+    },
+    {
+      "id": "failed_login_count",
+      "name": "Failed login count",
+      "domain": "security",
+      "description": "Failed login attempts in the window.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.status",
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(*) WHERE status='FAILED'",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS failed_logins FROM login_events WHERE status = 'FAILED' AND created_at >= :since",
+      "interpretation": "Spikes indicate credential stuffing or brute force.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "failed logins",
+        "login failures"
+      ],
+      "explain": [
+        "SEARCH login_events USING INDEX idx_login_status (status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "failed",
+        "failures",
+        "login",
+        "logins"
+      ],
+      "example_queries": [
+        "show failed login count",
+        "what is the failed login count",
+        "failed login count please",
+        "show me failed logins",
+        "show me login failures",
+        "failed login count in the last 7 days",
+        "failed login count last 30 days",
+        "failed logins in the last 24 hours"
+      ]
+    },
+    {
+      "id": "failed_logins_by_ip",
+      "name": "Failed logins by IP",
+      "domain": "security",
+      "description": "IP addresses with the most failed logins.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.ip_address",
+        "login_events.status",
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY ip_address WHERE status='FAILED'",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT ip_address, COUNT(*) AS failures FROM login_events WHERE status = 'FAILED' AND created_at >= :since GROUP BY ip_address ORDER BY failures DESC LIMIT :limit",
+      "interpretation": "Top IPs are candidates for blocking.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "suspicious ips",
+        "brute force sources"
+      ],
+      "explain": [
+        "SEARCH login_events USING INDEX idx_login_status (status=?)",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "brute",
+        "failed",
+        "force",
+        "ips",
+        "logins",
+        "sources",
+        "suspicious"
+      ],
+      "example_queries": [
+        "show failed logins by ip",
+        "what is the failed logins by ip",
+        "failed logins by ip please",
+        "show me suspicious ips",
+        "show me brute force sources",
+        "failed logins by ip in the last 7 days",
+        "failed logins by ip last 30 days",
+        "suspicious ips in the last 24 hours"
+      ]
+    },
+    {
+      "id": "multi_country_login_users",
+      "name": "Users logging in from multiple countries",
+      "domain": "security",
+      "description": "Users with logins from more than one country in the window.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.user_id",
+        "login_events.country",
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(DISTINCT country) > 1 GROUP BY user_id",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT user_id, COUNT(DISTINCT country) AS countries FROM login_events WHERE created_at >= :since AND user_id IS NOT NULL GROUP BY user_id HAVING COUNT(DISTINCT country) > 1",
+      "interpretation": "Impossible-travel signal for account takeover.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "impossible travel",
+        "geo anomalies"
+      ],
+      "explain": [
+        "SEARCH login_events USING INDEX idx_login_user_id (user_id>?)",
+        "USE TEMP B-TREE FOR count(DISTINCT)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "anomalies",
+        "countries",
+        "from",
+        "geo",
+        "impossible",
+        "logging",
+        "multiple",
+        "travel",
+        "users"
+      ],
+      "example_queries": [
+        "show users logging in from multiple countries",
+        "what is the users logging in from multiple countries",
+        "users logging in from multiple countries please",
+        "show me impossible travel",
+        "show me geo anomalies",
+        "users logging in from multiple countries in the last 7 days",
+        "users logging in from multiple countries last 30 days",
+        "impossible travel in the last 24 hours"
+      ]
+    },
+    {
+      "id": "login_status_breakdown",
+      "name": "Login outcomes",
+      "domain": "security",
+      "description": "Logins by status (SUCCESS, FAILED, BLOCKED, MFA_REQUIRED).",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.status",
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY status",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT status, COUNT(*) AS events FROM login_events WHERE created_at >= :since GROUP BY status",
+      "interpretation": "A rising BLOCKED or FAILED share points to attacks.",
+      "direction": "neutral",
+      "synonyms": [
+        "login success rate",
+        "authentication outcomes"
+      ],
+      "explain": [
+        "SCAN login_events USING INDEX idx_login_status"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "authentication",
+        "login",
+        "outcomes",
+        "rate",
+        "success"
+      ],
+      "example_queries": [
+        "show login outcomes",
+        "what is the login outcomes",
+        "login outcomes please",
+        "show me login success rate",
+        "show me authentication outcomes",
+        "login outcomes in the last 7 days",
+        "login outcomes last 30 days",
+        "login success rate in the last 24 hours"
+      ]
+    },
+    {
+      "id": "high_risk_user_failed_logins",
+      "name": "Failed logins of high-risk users",
+      "domain": "security",
+      "description": "Failed logins by users rated HIGH risk.",
+      "tables": [
+        "login_events",
+        "users"
+      ],
+      "joins": [
+        {
+          "left": "login_events",
+          "right": "users",
+          "on": "login_events.user_id = users.user_id"
+        }
+      ],
+      "columns": [
+        "login_events.status",
+        "login_events.user_id",
+        "login_events.created_at",
+        "users.user_id",
+        "users.risk_level"
+      ],
+      "formula": "COUNT(*) JOIN users WHERE HIGH and FAILED",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS failures FROM login_events JOIN users ON login_events.user_id = users.user_id WHERE login_events.status = 'FAILED' AND users.risk_level = 'HIGH' AND login_events.created_at >= :since",
+      "interpretation": "Combines identity risk with authentication failures.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "risky users failed logins"
+      ],
+      "explain": [
+        "SEARCH login_events USING INDEX idx_login_status (status=?)",
+        "SEARCH users USING INDEX sqlite_autoindex_users_1 (user_id=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "failed",
+        "high",
+        "logins",
+        "risk",
+        "risky",
+        "users"
+      ],
+      "example_queries": [
+        "show failed logins of high-risk users",
+        "what is the failed logins of high-risk users",
+        "failed logins of high-risk users please",
+        "show me risky users failed logins",
+        "failed logins of high-risk users in the last 7 days",
+        "failed logins of high-risk users last 30 days",
+        "risky users failed logins in the last 24 hours"
+      ]
+    },
+    {
+      "id": "open_alerts_by_severity",
+      "name": "Open alerts by severity",
+      "domain": "security",
+      "description": "Open alerts grouped by severity.",
+      "tables": [
+        "alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "alerts.status",
+        "alerts.severity"
+      ],
+      "formula": "COUNT(*) WHERE status='OPEN' GROUP BY severity",
+      "parameters": [],
+      "sql": "SELECT severity, COUNT(*) AS open_alerts FROM alerts WHERE status = 'OPEN' GROUP BY severity",
+      "interpretation": "Backlog of unhandled alerts; CRITICAL and HIGH should be near zero.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "open alerts",
+        "alert backlog"
+      ],
+      "explain": [
+        "SEARCH alerts USING INDEX idx_alerts_status (status=?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alert",
+        "alerts",
+        "backlog",
+        "open",
+        "severity"
+      ],
+      "example_queries": [
+        "show open alerts by severity",
+        "what is the open alerts by severity",
+        "open alerts by severity please",
+        "show me open alerts",
+        "show me alert backlog"
+      ]
+    },
+    {
+      "id": "alerts_by_rule",
+      "name": "Alerts by rule",
+      "domain": "security",
+      "description": "Alert counts per detection rule with rule type.",
+      "tables": [
+        "alerts",
+        "alert_rules"
+      ],
+      "joins": [
+        {
+          "left": "alerts",
+          "right": "alert_rules",
+          "on": "alerts.rule_id = alert_rules.rule_id"
+        }
+      ],
+      "columns": [
+        "alerts.rule_id",
+        "alerts.created_at",
+        "alert_rules.rule_id",
+        "alert_rules.rule_name",
+        "alert_rules.rule_type"
+      ],
+      "formula": "COUNT(*) GROUP BY rule",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT alert_rules.rule_name, alert_rules.rule_type, COUNT(*) AS alert_count FROM alerts JOIN alert_rules ON alerts.rule_id = alert_rules.rule_id WHERE alerts.created_at >= :since GROUP BY alert_rules.rule_name, alert_rules.rule_type ORDER BY alert_count DESC",
+      "interpretation": "Noisy rules need tuning; silent rules may be misconfigured.",
+      "direction": "neutral",
+      "synonyms": [
+        "rule hit counts",
+        "noisiest rules"
+      ],
+      "explain": [
+        "SEARCH alerts USING INDEX idx_alerts_created_at (created_at>?)",
+        "SEARCH alert_rules USING INDEX sqlite_autoindex_alert_rules_1 (rule_id=?)",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alerts",
+        "counts",
+        "hit",
+        "noisiest",
+        "rule",
+        "rules"
+      ],
+      "example_queries": [
+        "show alerts by rule",
+        "what is the alerts by rule",
+        "alerts by rule please",
+        "show me rule hit counts",
+        "show me noisiest rules",
+        "alerts by rule in the last 7 days",
+        "alerts by rule last 30 days",
+        "rule hit counts in the last 24 hours"
+      ]
+    },
+    {
+      "id": "top_users_by_alerts",
+      "name": "Users with most alerts",
+      "domain": "risk",
+      "description": "Users ranked by number of alerts raised.",
+      "tables": [
+        "alerts",
+        "users"
+      ],
+      "joins": [
+        {
+          "left": "alerts",
+          "right": "users",
+          "on": "alerts.user_id = users.user_id"
+        }
+      ],
+      "columns": [
+        "alerts.user_id",
+        "alerts.created_at",
+        "users.user_id",
+        "users.full_name",
+        "users.risk_level"
+      ],
+      "formula": "COUNT(*) GROUP BY user",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT users.user_id, users.full_name, users.risk_level, COUNT(*) AS alert_count FROM alerts JOIN users ON alerts.user_id = users.user_id WHERE alerts.created_at >= :since GROUP BY users.user_id, users.full_name, users.risk_level ORDER BY alert_count DESC LIMIT :limit",
+      "interpretation": "Repeat offenders for investigation priority.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "repeat alert users",
+        "most flagged customers"
+      ],
+      "explain": [
+        "SEARCH alerts USING INDEX idx_alerts_created_at (created_at>?)",
+        "SEARCH users USING INDEX sqlite_autoindex_users_1 (user_id=?)",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alert",
+        "alerts",
+        "customers",
+        "flagged",
+        "most",
+        "repeat",
+        "users",
+        "with"
+      ],
+      "example_queries": [
+        "show users with most alerts",
+        "what is the users with most alerts",
+        "users with most alerts please",
+        "show me repeat alert users",
+        "show me most flagged customers",
+        "users with most alerts in the last 7 days",
+        "users with most alerts last 30 days",
+        "repeat alert users in the last 24 hours"
+      ]
+    },
+    {
+      "id": "critical_open_alert_count",
+      "name": "Critical open alerts",
+      "domain": "security",
+      "description": "Open CRITICAL alerts needing immediate action.",
+      "tables": [
+        "alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "alerts.status",
+        "alerts.severity"
+      ],
+      "formula": "COUNT(*) WHERE OPEN AND CRITICAL",
+      "parameters": [],
+      "sql": "SELECT COUNT(*) AS critical_open FROM alerts WHERE status = 'OPEN' AND severity = 'CRITICAL'",
+      "interpretation": "Should be zero; any value requires immediate response.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "critical alerts",
+        "urgent alerts"
+      ],
+      "explain": [
+        "SEARCH alerts USING INDEX idx_alerts_status (status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alerts",
+        "critical",
+        "open",
+        "urgent"
+      ],
+      "example_queries": [
+        "show critical open alerts",
+        "what is the critical open alerts",
+        "critical open alerts please",
+        "show me critical alerts",
+        "show me urgent alerts"
+      ]
+    },
+    {
+      "id": "export_actions_count",
+      "name": "Export actions",
+      "domain": "compliance",
+      "description": "Audit log EXPORT actions in the window.",
+      "tables": [
+        "audit_logs"
+      ],
+      "joins": [],
+      "columns": [
+        "audit_logs.action",
+        "audit_logs.created_at"
+      ],
+      "formula": "COUNT(*) WHERE action='EXPORT'",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS exports FROM audit_logs WHERE action = 'EXPORT' AND created_at >= :since",
+      "interpretation": "Data exfiltration indicator; review unusual spikes by actor.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "data exports",
+        "export activity"
+      ],
+      "explain": [
+        "SEARCH audit_logs USING INDEX idx_audit_action (action=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "actions",
+        "activity",
+        "data",
+        "export",
+        "exports"
+      ],
+      "example_queries": [
+        "show export actions",
+        "what is the export actions",
+        "export actions please",
+        "show me data exports",
+        "show me export activity",
+        "export actions in the last 7 days",
+        "export actions last 30 days",
+        "data exports in the last 24 hours"
+      ]
+    },
+    {
+      "id": "audit_actions_by_actor",
+      "name": "Audit actions by actor",
+      "domain": "compliance",
+      "description": "Most active actors in the audit trail.",
+      "tables": [
+        "audit_logs"
+      ],
+      "joins": [],
+      "columns": [
+        "audit_logs.actor_id",
+        "audit_logs.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY actor_id",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT actor_id, COUNT(*) AS actions FROM audit_logs WHERE created_at >= :since GROUP BY actor_id ORDER BY actions DESC LIMIT :limit",
+      "interpretation": "Highlights privileged users and unusual activity levels.",
+      "direction": "neutral",
+      "synonyms": [
+        "who did most actions",
+        "audit trail activity"
+      ],
+      "explain": [
+        "SCAN audit_logs USING INDEX idx_audit_actor_id",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "actions",
+        "activity",
+        "actor",
+        "audit",
+        "did",
+        "most",
+        "trail",
+        "who"
+      ],
+      "example_queries": [
+        "show audit actions by actor",
+        "what is the audit actions by actor",
+        "audit actions by actor please",
+        "show me who did most actions",
+        "show me audit trail activity",
+        "audit actions by actor in the last 7 days",
+        "audit actions by actor last 30 days",
+        "who did most actions in the last 24 hours"
+      ]
+    },
+    {
+      "id": "deployed_dashboard_count",
+      "name": "Deployed dashboards",
+      "domain": "operations",
+      "description": "Dashboards currently deployed.",
+      "tables": [
+        "dashboards"
+      ],
+      "joins": [],
+      "columns": [
+        "dashboards.is_deployed"
+      ],
+      "formula": "COUNT(*) WHERE is_deployed",
+      "parameters": [],
+      "sql": "SELECT COUNT(*) AS deployed FROM dashboards WHERE is_deployed = TRUE",
+      "interpretation": "Adoption of saved dashboards.",
+      "direction": "higher_is_better",
+      "synonyms": [
+        "live dashboards",
+        "deployed dashboards"
+      ],
+      "explain": [
+        "SEARCH dashboards USING COVERING INDEX idx_dashboards_is_deployed (is_deployed=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "dashboards",
+        "deployed",
+        "live"
+      ],
+      "example_queries": [
+        "show deployed dashboards",
+        "what is the deployed dashboards",
+        "deployed dashboards please",
+        "show me live dashboards",
+        "show me deployed dashboards"
+      ]
+    },
+    {
+      "id": "favorite_query_count_by_user",
+      "name": "Favorite queries by user",
+      "domain": "operations",
+      "description": "Favorited saved queries per user.",
+      "tables": [
+        "query_history"
+      ],
+      "joins": [],
+      "columns": [
+        "query_history.user_id",
+        "query_history.is_favorite"
+      ],
+      "formula": "COUNT(*) WHERE is_favorite GROUP BY user_id",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT user_id, COUNT(*) AS favorites FROM query_history WHERE is_favorite = TRUE GROUP BY user_id ORDER BY favorites DESC LIMIT :limit",
+      "interpretation": "Shows repeat-use queries worth turning into dashboards.",
+      "direction": "neutral",
+      "synonyms": [
+        "favorite queries"
+      ],
+      "explain": [
+        "SCAN query_history",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "favorite",
+        "queries",
+        "user"
+      ],
+      "example_queries": [
+        "show favorite queries by user",
+        "what is the favorite queries by user",
+        "favorite queries by user please",
+        "show me favorite queries"
+      ]
+    },
+    {
+      "id": "active_metric_specs_count",
+      "name": "Active alert metrics",
+      "domain": "operations",
+      "description": "Alert-engine metrics currently triggered.",
+      "tables": [
+        "metric_specs"
+      ],
+      "joins": [],
+      "columns": [
+        "metric_specs.is_active",
+        "metric_specs.severity"
+      ],
+      "formula": "COUNT(*) WHERE is_active=1 GROUP BY severity",
+      "parameters": [],
+      "sql": "SELECT severity, COUNT(*) AS active_metrics FROM metric_specs WHERE is_active = 1 GROUP BY severity",
+      "interpretation": "Currently firing engine alerts by severity.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "triggered alert metrics"
+      ],
+      "explain": [
+        "SEARCH metric_specs USING INDEX idx_metric_specs_is_active (is_active=?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "active",
+        "alert",
+        "metrics",
+        "triggered"
+      ],
+      "example_queries": [
+        "show active alert metrics",
+        "what is the active alert metrics",
+        "active alert metrics please",
+        "show me triggered alert metrics"
+      ]
+    },
+    {
+      "id": "active_anomalies",
+      "name": "Active anomalies",
+      "domain": "operations",
+      "description": "Anomalies with current status active.",
+      "tables": [
+        "anomaly_history"
+      ],
+      "joins": [],
+      "columns": [
+        "anomaly_history.current_status",
+        "anomaly_history.severity",
+        "anomaly_history.alert_count"
+      ],
+      "formula": "COUNT(*), SUM(alert_count) WHERE current_status='active'",
+      "parameters": [],
+      "sql": "SELECT severity, COUNT(*) AS anomalies, SUM(alert_count) AS total_alerts FROM anomaly_history WHERE current_status = 'active' GROUP BY severity",
+      "interpretation": "Ongoing anomaly episodes; longer-lived ones need escalation.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "ongoing anomalies"
+      ],
+      "explain": [
+        "SEARCH anomaly_history USING INDEX idx_anomaly_history_current_status (current_status=?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "active",
+        "anomalies",
+        "ongoing"
+      ],
+      "example_queries": [
+        "show active anomalies",
+        "what is the active anomalies",
+        "active anomalies please",
+        "show me ongoing anomalies"
+      ]
+    },
+    {
+      "id": "alert_triggers_by_metric",
+      "name": "Alert triggers per metric",
+      "domain": "operations",
+      "description": "Trigger counts per alert-engine metric.",
+      "tables": [
+        "alert_history",
+        "metric_specs"
+      ],
+      "joins": [
+        {
+          "left": "alert_history",
+          "right": "metric_specs",
+          "on": "alert_history.metric_id = metric_specs.metric_id"
+        }
+      ],
+      "columns": [
+        "alert_history.metric_id",
+        "alert_history.action",
+        "alert_history.created_at",
+        "metric_specs.metric_id",
+        "metric_specs.name"
+      ],
+      "formula": "COUNT(*) WHERE action='triggered' GROUP BY metric",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT metric_specs.name, COUNT(*) AS triggers FROM alert_history JOIN metric_specs ON alert_history.metric_id = metric_specs.metric_id WHERE alert_history.action = 'triggered' AND alert_history.created_at >= :since GROUP BY metric_specs.name ORDER BY triggers DESC",
+      "interpretation": "Frequent triggers imply noisy thresholds or persistent issues.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "alert engine triggers"
+      ],
+      "explain": [
+        "SEARCH alert_history USING INDEX idx_alert_history_created_at (created_at>?)",
+        "SEARCH metric_specs USING INTEGER PRIMARY KEY (rowid=?)",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alert",
+        "engine",
+        "metric",
+        "per",
+        "triggers"
+      ],
+      "example_queries": [
+        "show alert triggers per metric",
+        "what is the alert triggers per metric",
+        "alert triggers per metric please",
+        "show me alert engine triggers",
+        "alert triggers per metric in the last 7 days",
+        "alert triggers per metric last 30 days",
+        "alert engine triggers in the last 24 hours"
+      ]
+    },
+    {
+      "id": "unprocessed_events_count",
+      "name": "Unprocessed events",
+      "domain": "operations",
+      "description": "Events not yet processed by the alert engine, by source.",
+      "tables": [
+        "events"
+      ],
+      "joins": [],
+      "columns": [
+        "events.processed",
+        "events.table_name"
+      ],
+      "formula": "COUNT(*) WHERE processed=0 GROUP BY table_name",
+      "parameters": [],
+      "sql": "SELECT table_name, COUNT(*) AS pending FROM events WHERE processed = 0 GROUP BY table_name",
+      "interpretation": "Backlog means the engine is lagging.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "event backlog"
+      ],
+      "explain": [
+        "SEARCH events USING INDEX idx_events_processed (processed=?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "backlog",
+        "event",
+        "events",
+        "unprocessed"
+      ],
+      "example_queries": [
+        "show unprocessed events",
+        "what is the unprocessed events",
+        "unprocessed events please",
+        "show me event backlog"
+      ]
+    },
+    {
+      "id": "daily_summary_view",
+      "name": "Daily summary (view)",
+      "domain": "operations",
+      "description": "Pre-aggregated daily transaction summary.",
+      "tables": [
+        "v_daily_summary"
+      ],
+      "joins": [],
+      "columns": [
+        "v_daily_summary.date",
+        "v_daily_summary.total_txns"
+      ],
+      "formula": "SELECT FROM v_daily_summary",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT date, total_txns, total_volume, avg_amount, flagged_count, failed_count FROM v_daily_summary ORDER BY date DESC LIMIT :limit",
+      "interpretation": "Fast pre-aggregated trend view.",
+      "direction": "neutral",
+      "synonyms": [
+        "daily summary"
+      ],
+      "explain": [
+        "CO-ROUTINE v_daily_summary",
+        "SCAN transactions",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "SCAN v_daily_summary",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "daily",
+        "summary",
+        "view"
+      ],
+      "example_queries": [
+        "show daily summary (view)",
+        "what is the daily summary (view)",
+        "daily summary (view) please",
+        "show me daily summary"
+      ]
+    },
+    {
+      "id": "flagged_transactions_view",
+      "name": "Flagged transactions with user context (view)",
+      "domain": "risk",
+      "description": "Flagged transactions joined to user details.",
+      "tables": [
+        "v_flagged_transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "v_flagged_transactions.txn_id",
+        "v_flagged_transactions.amount_usd"
+      ],
+      "formula": "SELECT FROM v_flagged_transactions",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT txn_id, user_id, amount_usd, full_name, user_country, risk_level FROM v_flagged_transactions ORDER BY amount_usd DESC LIMIT :limit",
+      "interpretation": "Triage list of flagged payments with user risk context.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "flagged transactions list"
+      ],
+      "explain": [
+        "SEARCH t USING INDEX idx_txn_status (status=?)",
+        "SEARCH u USING INDEX sqlite_autoindex_users_1 (user_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": false,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "context",
+        "flagged",
+        "list",
+        "transactions",
+        "user",
+        "view",
+        "with"
+      ],
+      "example_queries": [
+        "show flagged transactions with user context (view)",
+        "what is the flagged transactions with user context (view)",
+        "flagged transactions with user context (view) please",
+        "show me flagged transactions list"
+      ]
+    },
+    {
+      "id": "open_alerts_view",
+      "name": "Open alerts with context (view)",
+      "domain": "security",
+      "description": "Open alerts with user and transaction context.",
+      "tables": [
+        "v_open_alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "v_open_alerts.alert_id",
+        "v_open_alerts.severity"
+      ],
+      "formula": "SELECT FROM v_open_alerts",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT alert_id, rule_name, severity, user_id, full_name, txn_amount FROM v_open_alerts LIMIT :limit",
+      "interpretation": "Prioritized work queue for analysts.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "alert work queue"
+      ],
+      "explain": [
+        "SEARCH a USING INDEX idx_alerts_status (status=?)",
+        "SEARCH u USING INDEX sqlite_autoindex_users_1 (user_id=?) LEFT-JOIN",
+        "SEARCH t USING INDEX sqlite_autoindex_transactions_1 (txn_id=?) LEFT-JOIN",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": false,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alert",
+        "alerts",
+        "context",
+        "open",
+        "queue",
+        "view",
+        "with",
+        "work"
+      ],
+      "example_queries": [
+        "show open alerts with context (view)",
+        "what is the open alerts with context (view)",
+        "open alerts with context (view) please",
+        "show me alert work queue"
+      ]
+    },
+    {
+      "id": "high_risk_users_view",
+      "name": "High-risk users with exposure (view)",
+      "domain": "risk",
+      "description": "High-risk users with transaction volume and open alerts.",
+      "tables": [
+        "v_high_risk_users"
+      ],
+      "joins": [],
+      "columns": [
+        "v_high_risk_users.user_id",
+        "v_high_risk_users.total_volume"
+      ],
+      "formula": "SELECT FROM v_high_risk_users",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "sql": "SELECT user_id, full_name, txn_count, total_volume, alert_count FROM v_high_risk_users ORDER BY total_volume DESC LIMIT :limit",
+      "interpretation": "Highest-exposure risky customers first.",
+      "direction": "higher_is_worse",
+      "synonyms": [
+        "risky users exposure"
+      ],
+      "explain": [
+        "CO-ROUTINE v_high_risk_users",
+        "SEARCH u USING INDEX idx_users_risk_level (risk_level=?)",
+        "SEARCH t USING INDEX idx_txn_user_created (user_id=?) LEFT-JOIN",
+        "SEARCH a USING INDEX idx_alerts_status (status=?) LEFT-JOIN",
+        "USE TEMP B-TREE FOR GROUP BY",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SCAN v_high_risk_users",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "indexed": false,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "exposure",
+        "high",
+        "risk",
+        "risky",
+        "users",
+        "view",
+        "with"
+      ],
+      "example_queries": [
+        "show high-risk users with exposure (view)",
+        "what is the high-risk users with exposure (view)",
+        "high-risk users with exposure (view) please",
+        "show me risky users exposure"
+      ]
+    },
+    {
+      "id": "users_by_kyc_status",
+      "name": "Users by kyc_status",
+      "domain": "compliance",
+      "description": "Row count of users grouped by kyc_status.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.kyc_status"
+      ],
+      "formula": "COUNT(*) GROUP BY kyc_status",
+      "parameters": [],
+      "sql": "SELECT kyc_status, COUNT(*) AS row_count FROM users GROUP BY kyc_status",
+      "interpretation": "Compliance coverage of the customer base.",
+      "direction": "neutral",
+      "synonyms": [
+        "users by kyc_status",
+        "kyc_status breakdown of users"
+      ],
+      "explain": [
+        "SCAN users USING COVERING INDEX idx_users_kyc_status"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "breakdown",
+        "kyc_status",
+        "users"
+      ],
+      "example_queries": [
+        "show users by kyc_status",
+        "what is the users by kyc_status",
+        "users by kyc_status please",
+        "show me users by kyc_status",
+        "show me kyc_status breakdown of users"
+      ]
+    },
+    {
+      "id": "users_kyc_status_count",
+      "name": "Users count for a kyc_status",
+      "domain": "compliance",
+      "description": "Count of users rows with a given kyc_status in the window.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.kyc_status",
+        "users.created_at"
+      ],
+      "formula": "COUNT(*) WHERE kyc_status = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "PENDING",
+          "choices": [
+            "PENDING",
+            "VERIFIED",
+            "REJECTED",
+            "EXPIRED"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM users WHERE kyc_status = :value AND created_at >= :since",
+      "interpretation": "Compliance coverage of the customer base.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of users with kyc_status",
+        "kyc_status count in users"
+      ],
+      "explain": [
+        "SEARCH users USING INDEX idx_users_kyc_status (kyc_status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "for",
+        "kyc_status",
+        "number",
+        "users",
+        "with"
+      ],
+      "example_queries": [
+        "show users count for a kyc_status",
+        "what is the users count for a kyc_status",
+        "users count for a kyc_status please",
+        "show me number of users with kyc_status",
+        "show me kyc_status count in users",
+        "users count for a kyc_status in the last 7 days",
+        "users count for a kyc_status last 30 days",
+        "number of users with kyc_status in the last 24 hours"
+      ]
+    },
+    {
+      "id": "users_by_risk_level",
+      "name": "Users by risk_level",
+      "domain": "compliance",
+      "description": "Row count of users grouped by risk_level.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.risk_level"
+      ],
+      "formula": "COUNT(*) GROUP BY risk_level",
+      "parameters": [],
+      "sql": "SELECT risk_level, COUNT(*) AS row_count FROM users GROUP BY risk_level",
+      "interpretation": "Risk profile of customers; HIGH share is exposure.",
+      "direction": "neutral",
+      "synonyms": [
+        "users by risk_level",
+        "risk_level breakdown of users"
+      ],
+      "explain": [
+        "SCAN users USING COVERING INDEX idx_users_risk_level"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "breakdown",
+        "risk_level",
+        "users"
+      ],
+      "example_queries": [
+        "show users by risk_level",
+        "what is the users by risk_level",
+        "users by risk_level please",
+        "show me users by risk_level",
+        "show me risk_level breakdown of users"
+      ]
+    },
+    {
+      "id": "users_risk_level_count",
+      "name": "Users count for a risk_level",
+      "domain": "compliance",
+      "description": "Count of users rows with a given risk_level in the window.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.risk_level",
+        "users.created_at"
+      ],
+      "formula": "COUNT(*) WHERE risk_level = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "LOW",
+          "choices": [
+            "LOW",
+            "MEDIUM",
+            "HIGH"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM users WHERE risk_level = :value AND created_at >= :since",
+      "interpretation": "Risk profile of customers; HIGH share is exposure.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of users with risk_level",
+        "risk_level count in users"
+      ],
+      "explain": [
+        "SEARCH users USING INDEX idx_users_risk_level (risk_level=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "for",
+        "number",
+        "risk_level",
+        "users",
+        "with"
+      ],
+      "example_queries": [
+        "show users count for a risk_level",
+        "what is the users count for a risk_level",
+        "users count for a risk_level please",
+        "show me number of users with risk_level",
+        "show me risk_level count in users",
+        "users count for a risk_level in the last 7 days",
+        "users count for a risk_level last 30 days",
+        "number of users with risk_level in the last 24 hours"
+      ]
+    },
+    {
+      "id": "users_by_account_status",
+      "name": "Users by account_status",
+      "domain": "compliance",
+      "description": "Row count of users grouped by account_status.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.account_status"
+      ],
+      "formula": "COUNT(*) GROUP BY account_status",
+      "parameters": [],
+      "sql": "SELECT account_status, COUNT(*) AS row_count FROM users GROUP BY account_status",
+      "interpretation": "Account health; SUSPENDED or FROZEN reflect enforcement.",
+      "direction": "neutral",
+      "synonyms": [
+        "users by account_status",
+        "account_status breakdown of users"
+      ],
+      "explain": [
+        "SCAN users USING COVERING INDEX idx_users_account_status"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "account_status",
+        "breakdown",
+        "users"
+      ],
+      "example_queries": [
+        "show users by account_status",
+        "what is the users by account_status",
+        "users by account_status please",
+        "show me users by account_status",
+        "show me account_status breakdown of users"
+      ]
+    },
+    {
+      "id": "users_account_status_count",
+      "name": "Users count for a account_status",
+      "domain": "compliance",
+      "description": "Count of users rows with a given account_status in the window.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.account_status",
+        "users.created_at"
+      ],
+      "formula": "COUNT(*) WHERE account_status = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "ACTIVE",
+          "choices": [
+            "ACTIVE",
+            "SUSPENDED",
+            "CLOSED",
+            "FROZEN"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM users WHERE account_status = :value AND created_at >= :since",
+      "interpretation": "Account health; SUSPENDED or FROZEN reflect enforcement.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of users with account_status",
+        "account_status count in users"
+      ],
+      "explain": [
+        "SEARCH users USING INDEX idx_users_account_status (account_status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "account_status",
+        "count",
+        "for",
+        "number",
+        "users",
+        "with"
+      ],
+      "example_queries": [
+        "show users count for a account_status",
+        "what is the users count for a account_status",
+        "users count for a account_status please",
+        "show me number of users with account_status",
+        "show me account_status count in users",
+        "users count for a account_status in the last 7 days",
+        "users count for a account_status last 30 days",
+        "number of users with account_status in the last 24 hours"
+      ]
+    },
+    {
+      "id": "users_daily_count",
+      "name": "Users created per day",
+      "domain": "compliance",
+      "description": "Rows created per day in users.",
+      "tables": [
+        "users"
+      ],
+      "joins": [],
+      "columns": [
+        "users.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM users WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "users per day",
+        "daily users trend"
+      ],
+      "explain": [
+        "SEARCH users USING COVERING INDEX idx_users_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "created",
+        "daily",
+        "day",
+        "per",
+        "trend",
+        "users"
+      ],
+      "example_queries": [
+        "show users created per day",
+        "what is the users created per day",
+        "users created per day please",
+        "show me users per day",
+        "show me daily users trend",
+        "users created per day in the last 7 days",
+        "users created per day last 30 days",
+        "users per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "transactions_by_txn_type",
+      "name": "Transactions by txn_type",
+      "domain": "risk",
+      "description": "Row count of transactions grouped by txn_type.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.txn_type"
+      ],
+      "formula": "COUNT(*) GROUP BY txn_type",
+      "parameters": [],
+      "sql": "SELECT txn_type, COUNT(*) AS row_count FROM transactions GROUP BY txn_type",
+      "interpretation": "Mix of financial activity; shifts show changing customer behaviour.",
+      "direction": "neutral",
+      "synonyms": [
+        "transactions by txn_type",
+        "txn_type breakdown of transactions"
+      ],
+      "explain": [
+        "SCAN transactions USING COVERING INDEX idx_txn_type"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "breakdown",
+        "transactions",
+        "txn_type"
+      ],
+      "example_queries": [
+        "show transactions by txn_type",
+        "what is the transactions by txn_type",
+        "transactions by txn_type please",
+        "show me transactions by txn_type",
+        "show me txn_type breakdown of transactions"
+      ]
+    },
+    {
+      "id": "transactions_txn_type_count",
+      "name": "Transactions count for a txn_type",
+      "domain": "risk",
+      "description": "Count of transactions rows with a given txn_type in the window.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.txn_type",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) WHERE txn_type = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "DEPOSIT",
+          "choices": [
+            "DEPOSIT",
+            "WITHDRAWAL",
+            "TRADE",
+            "FEE",
+            "BONUS",
+            "TRANSFER"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM transactions WHERE txn_type = :value AND created_at >= :since",
+      "interpretation": "Mix of financial activity; shifts show changing customer behaviour.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of transactions with txn_type",
+        "txn_type count in transactions"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_type (txn_type=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "for",
+        "number",
+        "transactions",
+        "txn_type",
+        "with"
+      ],
+      "example_queries": [
+        "show transactions count for a txn_type",
+        "what is the transactions count for a txn_type",
+        "transactions count for a txn_type please",
+        "show me number of transactions with txn_type",
+        "show me txn_type count in transactions",
+        "transactions count for a txn_type in the last 7 days",
+        "transactions count for a txn_type last 30 days",
+        "number of transactions with txn_type in the last 24 hours"
+      ]
+    },
+    {
+      "id": "transactions_by_status",
+      "name": "Transactions by status",
+      "domain": "risk",
+      "description": "Row count of transactions grouped by status.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.status"
+      ],
+      "formula": "COUNT(*) GROUP BY status",
+      "parameters": [],
+      "sql": "SELECT status, COUNT(*) AS row_count FROM transactions GROUP BY status",
+      "interpretation": "Distribution of transaction outcomes; growth in FAILED or FLAGGED is a risk or reliability signal.",
+      "direction": "neutral",
+      "synonyms": [
+        "transactions by status",
+        "status breakdown of transactions"
+      ],
+      "explain": [
+        "SCAN transactions USING COVERING INDEX idx_txn_status"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "breakdown",
+        "status",
+        "transactions"
+      ],
+      "example_queries": [
+        "show transactions by status",
+        "what is the transactions by status",
+        "transactions by status please",
+        "show me transactions by status",
+        "show me status breakdown of transactions"
+      ]
+    },
+    {
+      "id": "transactions_status_count",
+      "name": "Transactions count for a status",
+      "domain": "risk",
+      "description": "Count of transactions rows with a given status in the window.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.status",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) WHERE status = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "PENDING",
+          "choices": [
+            "PENDING",
+            "COMPLETED",
+            "FAILED",
+            "FLAGGED",
+            "REVERSED"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM transactions WHERE status = :value AND created_at >= :since",
+      "interpretation": "Distribution of transaction outcomes; growth in FAILED or FLAGGED is a risk or reliability signal.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of transactions with status",
+        "status count in transactions"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_status (status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "for",
+        "number",
+        "status",
+        "transactions",
+        "with"
+      ],
+      "example_queries": [
+        "show transactions count for a status",
+        "what is the transactions count for a status",
+        "transactions count for a status please",
+        "show me number of transactions with status",
+        "show me status count in transactions",
+        "transactions count for a status in the last 7 days",
+        "transactions count for a status last 30 days",
+        "number of transactions with status in the last 24 hours"
+      ]
+    },
+    {
+      "id": "transactions_by_payment_method",
+      "name": "Transactions by payment_method",
+      "domain": "risk",
+      "description": "Row count of transactions grouped by payment_method.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.payment_method"
+      ],
+      "formula": "COUNT(*) GROUP BY payment_method",
+      "parameters": [],
+      "sql": "SELECT payment_method, COUNT(*) AS row_count FROM transactions GROUP BY payment_method",
+      "interpretation": "Channel mix; concentration raises provider dependency risk.",
+      "direction": "neutral",
+      "synonyms": [
+        "transactions by payment_method",
+        "payment_method breakdown of transactions"
+      ],
+      "explain": [
+        "SCAN transactions",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "breakdown",
+        "payment_method",
+        "transactions"
+      ],
+      "example_queries": [
+        "show transactions by payment_method",
+        "what is the transactions by payment_method",
+        "transactions by payment_method please",
+        "show me transactions by payment_method",
+        "show me payment_method breakdown of transactions"
+      ]
+    },
+    {
+      "id": "transactions_payment_method_count",
+      "name": "Transactions count for a payment_method",
+      "domain": "risk",
+      "description": "Count of transactions rows with a given payment_method in the window.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.payment_method",
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) WHERE payment_method = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "CARD",
+          "choices": [
+            "CARD",
+            "BANK_TRANSFER",
+            "CRYPTO",
+            "EWALLET"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM transactions WHERE payment_method = :value AND created_at >= :since",
+      "interpretation": "Channel mix; concentration raises provider dependency risk.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of transactions with payment_method",
+        "payment_method count in transactions"
+      ],
+      "explain": [
+        "SEARCH transactions USING INDEX idx_txn_created_at (created_at>?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "for",
+        "number",
+        "payment_method",
+        "transactions",
+        "with"
+      ],
+      "example_queries": [
+        "show transactions count for a payment_method",
+        "what is the transactions count for a payment_method",
+        "transactions count for a payment_method please",
+        "show me number of transactions with payment_method",
+        "show me payment_method count in transactions",
+        "transactions count for a payment_method in the last 7 days",
+        "transactions count for a payment_method last 30 days",
+        "number of transactions with payment_method in the last 24 hours"
+      ]
+    },
+    {
+      "id": "transactions_daily_count",
+      "name": "Transactions created per day",
+      "domain": "risk",
+      "description": "Rows created per day in transactions.",
+      "tables": [
+        "transactions"
+      ],
+      "joins": [],
+      "columns": [
+        "transactions.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM transactions WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "transactions per day",
+        "daily transactions trend"
+      ],
+      "explain": [
+        "SEARCH transactions USING COVERING INDEX idx_txn_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "created",
+        "daily",
+        "day",
+        "per",
+        "transactions",
+        "trend"
+      ],
+      "example_queries": [
+        "show transactions created per day",
+        "what is the transactions created per day",
+        "transactions created per day please",
+        "show me transactions per day",
+        "show me daily transactions trend",
+        "transactions created per day in the last 7 days",
+        "transactions created per day last 30 days",
+        "transactions per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "login_events_by_device_type",
+      "name": "Login Events by device_type",
+      "domain": "security",
+      "description": "Row count of login_events grouped by device_type.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.device_type"
+      ],
+      "formula": "COUNT(*) GROUP BY device_type",
+      "parameters": [],
+      "sql": "SELECT device_type, COUNT(*) AS row_count FROM login_events GROUP BY device_type",
+      "interpretation": "Device mix; UNKNOWN devices are less trustworthy.",
+      "direction": "neutral",
+      "synonyms": [
+        "login_events by device_type",
+        "device_type breakdown of login_events"
+      ],
+      "explain": [
+        "SCAN login_events",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "breakdown",
+        "device_type",
+        "events",
+        "login",
+        "login_events"
+      ],
+      "example_queries": [
+        "show login events by device_type",
+        "what is the login events by device_type",
+        "login events by device_type please",
+        "show me login_events by device_type",
+        "show me device_type breakdown of login_events"
+      ]
+    },
+    {
+      "id": "login_events_device_type_count",
+      "name": "Login Events count for a device_type",
+      "domain": "security",
+      "description": "Count of login_events rows with a given device_type in the window.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.device_type",
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(*) WHERE device_type = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "MOBILE",
+          "choices": [
+            "MOBILE",
+            "DESKTOP",
+            "TABLET",
+            "UNKNOWN"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM login_events WHERE device_type = :value AND created_at >= :since",
+      "interpretation": "Device mix; UNKNOWN devices are less trustworthy.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of login_events with device_type",
+        "device_type count in login_events"
+      ],
+      "explain": [
+        "SEARCH login_events USING INDEX idx_login_created_at (created_at>?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "device_type",
+        "events",
+        "for",
+        "login",
+        "login_events",
+        "number",
+        "with"
+      ],
+      "example_queries": [
+        "show login events count for a device_type",
+        "what is the login events count for a device_type",
+        "login events count for a device_type please",
+        "show me number of login_events with device_type",
+        "show me device_type count in login_events",
+        "login events count for a device_type in the last 7 days",
+        "login events count for a device_type last 30 days",
+        "number of login_events with device_type in the last 24 hours"
+      ]
+    },
+    {
+      "id": "login_events_by_status",
+      "name": "Login Events by status",
+      "domain": "security",
+      "description": "Row count of login_events grouped by status.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.status"
+      ],
+      "formula": "COUNT(*) GROUP BY status",
+      "parameters": [],
+      "sql": "SELECT status, COUNT(*) AS row_count FROM login_events GROUP BY status",
+      "interpretation": "Authentication outcomes; FAILED or BLOCKED growth signals attacks.",
+      "direction": "neutral",
+      "synonyms": [
+        "login_events by status",
+        "status breakdown of login_events"
+      ],
+      "explain": [
+        "SCAN login_events USING COVERING INDEX idx_login_status"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "breakdown",
+        "events",
+        "login",
+        "login_events",
+        "status"
+      ],
+      "example_queries": [
+        "show login events by status",
+        "what is the login events by status",
+        "login events by status please",
+        "show me login_events by status",
+        "show me status breakdown of login_events"
+      ]
+    },
+    {
+      "id": "login_events_status_count",
+      "name": "Login Events count for a status",
+      "domain": "security",
+      "description": "Count of login_events rows with a given status in the window.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.status",
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(*) WHERE status = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "SUCCESS",
+          "choices": [
+            "SUCCESS",
+            "FAILED",
+            "BLOCKED",
+            "MFA_REQUIRED"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM login_events WHERE status = :value AND created_at >= :since",
+      "interpretation": "Authentication outcomes; FAILED or BLOCKED growth signals attacks.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of login_events with status",
+        "status count in login_events"
+      ],
+      "explain": [
+        "SEARCH login_events USING INDEX idx_login_status (status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "events",
+        "for",
+        "login",
+        "login_events",
+        "number",
+        "status",
+        "with"
+      ],
+      "example_queries": [
+        "show login events count for a status",
+        "what is the login events count for a status",
+        "login events count for a status please",
+        "show me number of login_events with status",
+        "show me status count in login_events",
+        "login events count for a status in the last 7 days",
+        "login events count for a status last 30 days",
+        "number of login_events with status in the last 24 hours"
+      ]
+    },
+    {
+      "id": "login_events_by_failure_reason",
+      "name": "Login Events by failure_reason",
+      "domain": "security",
+      "description": "Row count of login_events grouped by failure_reason.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.failure_reason"
+      ],
+      "formula": "COUNT(*) GROUP BY failure_reason",
+      "parameters": [],
+      "sql": "SELECT failure_reason, COUNT(*) AS row_count FROM login_events GROUP BY failure_reason",
+      "interpretation": "Why logins fail; ACCOUNT_LOCKED or IP_BLOCKED point to defences working.",
+      "direction": "neutral",
+      "synonyms": [
+        "login_events by failure_reason",
+        "failure_reason breakdown of login_events"
+      ],
+      "explain": [
+        "SCAN login_events",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "breakdown",
+        "events",
+        "failure_reason",
+        "login",
+        "login_events"
+      ],
+      "example_queries": [
+        "show login events by failure_reason",
+        "what is the login events by failure_reason",
+        "login events by failure_reason please",
+        "show me login_events by failure_reason",
+        "show me failure_reason breakdown of login_events"
+      ]
+    },
+    {
+      "id": "login_events_failure_reason_count",
+      "name": "Login Events count for a failure_reason",
+      "domain": "security",
+      "description": "Count of login_events rows with a given failure_reason in the window.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.failure_reason",
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(*) WHERE failure_reason = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "WRONG_PASSWORD",
+          "choices": [
+            "WRONG_PASSWORD",
+            "ACCOUNT_LOCKED",
+            "IP_BLOCKED"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM login_events WHERE failure_reason = :value AND created_at >= :since",
+      "interpretation": "Why logins fail; ACCOUNT_LOCKED or IP_BLOCKED point to defences working.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of login_events with failure_reason",
+        "failure_reason count in login_events"
+      ],
+      "explain": [
+        "SEARCH login_events USING INDEX idx_login_created_at (created_at>?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "count",
+        "events",
+        "failure_reason",
+        "for",
+        "login",
+        "login_events",
+        "number",
+        "with"
+      ],
+      "example_queries": [
+        "show login events count for a failure_reason",
+        "what is the login events count for a failure_reason",
+        "login events count for a failure_reason please",
+        "show me number of login_events with failure_reason",
+        "show me failure_reason count in login_events",
+        "login events count for a failure_reason in the last 7 days",
+        "login events count for a failure_reason last 30 days",
+        "number of login_events with failure_reason in the last 24 hours"
+      ]
+    },
+    {
+      "id": "login_events_daily_count",
+      "name": "Login Events created per day",
+      "domain": "security",
+      "description": "Rows created per day in login_events.",
+      "tables": [
+        "login_events"
+      ],
+      "joins": [],
+      "columns": [
+        "login_events.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM login_events WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "login_events per day",
+        "daily login_events trend"
+      ],
+      "explain": [
+        "SEARCH login_events USING COVERING INDEX idx_login_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "created",
+        "daily",
+        "day",
+        "events",
+        "login",
+        "login_events",
+        "per",
+        "trend"
+      ],
+      "example_queries": [
+        "show login events created per day",
+        "what is the login events created per day",
+        "login events created per day please",
+        "show me login_events per day",
+        "show me daily login_events trend",
+        "login events created per day in the last 7 days",
+        "login events created per day last 30 days",
+        "login_events per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "alert_rules_by_rule_type",
+      "name": "Alert Rules by rule_type",
+      "domain": "operations",
+      "description": "Row count of alert_rules grouped by rule_type.",
+      "tables": [
+        "alert_rules"
+      ],
+      "joins": [],
+      "columns": [
+        "alert_rules.rule_type"
+      ],
+      "formula": "COUNT(*) GROUP BY rule_type",
+      "parameters": [],
+      "sql": "SELECT rule_type, COUNT(*) AS row_count FROM alert_rules GROUP BY rule_type",
+      "interpretation": "Detection coverage by rule family.",
+      "direction": "neutral",
+      "synonyms": [
+        "alert_rules by rule_type",
+        "rule_type breakdown of alert_rules"
+      ],
+      "explain": [
+        "SCAN alert_rules",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "alert",
+        "alert_rules",
+        "breakdown",
+        "rule_type",
+        "rules"
+      ],
+      "example_queries": [
+        "show alert rules by rule_type",
+        "what is the alert rules by rule_type",
+        "alert rules by rule_type please",
+        "show me alert_rules by rule_type",
+        "show me rule_type breakdown of alert_rules"
+      ]
+    },
+    {
+      "id": "alert_rules_rule_type_count",
+      "name": "Alert Rules count for a rule_type",
+      "domain": "operations",
+      "description": "Count of alert_rules rows with a given rule_type in the window.",
+      "tables": [
+        "alert_rules"
+      ],
+      "joins": [],
+      "columns": [
+        "alert_rules.rule_type",
+        "alert_rules.created_at"
+      ],
+      "formula": "COUNT(*) WHERE rule_type = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "THRESHOLD",
+          "choices": [
+            "THRESHOLD",
+            "VELOCITY",
+            "PATTERN",
+            "GEO",
+            "TIME"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM alert_rules WHERE rule_type = :value AND created_at >= :since",
+      "interpretation": "Detection coverage by rule family.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of alert_rules with rule_type",
+        "rule_type count in alert_rules"
+      ],
+      "explain": [
+        "SCAN alert_rules"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "alert",
+        "alert_rules",
+        "count",
+        "for",
+        "number",
+        "rule_type",
+        "rules",
+        "with"
+      ],
+      "example_queries": [
+        "show alert rules count for a rule_type",
+        "what is the alert rules count for a rule_type",
+        "alert rules count for a rule_type please",
+        "show me number of alert_rules with rule_type",
+        "show me rule_type count in alert_rules",
+        "alert rules count for a rule_type in the last 7 days",
+        "alert rules count for a rule_type last 30 days",
+        "number of alert_rules with rule_type in the last 24 hours"
+      ]
+    },
+    {
+      "id": "alert_rules_by_severity",
+      "name": "Alert Rules by severity",
+      "domain": "operations",
+      "description": "Row count of alert_rules grouped by severity.",
+      "tables": [
+        "alert_rules"
+      ],
+      "joins": [],
+      "columns": [
+        "alert_rules.severity"
+      ],
+      "formula": "COUNT(*) GROUP BY severity",
+      "parameters": [],
+      "sql": "SELECT severity, COUNT(*) AS row_count FROM alert_rules GROUP BY severity",
+      "interpretation": "Distribution of rule severities configured.",
+      "direction": "neutral",
+      "synonyms": [
+        "alert_rules by severity",
+        "severity breakdown of alert_rules"
+      ],
+      "explain": [
+        "SCAN alert_rules",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "alert",
+        "alert_rules",
+        "breakdown",
+        "rules",
+        "severity"
+      ],
+      "example_queries": [
+        "show alert rules by severity",
+        "what is the alert rules by severity",
+        "alert rules by severity please",
+        "show me alert_rules by severity",
+        "show me severity breakdown of alert_rules"
+      ]
+    },
+    {
+      "id": "alert_rules_severity_count",
+      "name": "Alert Rules count for a severity",
+      "domain": "operations",
+      "description": "Count of alert_rules rows with a given severity in the window.",
+      "tables": [
+        "alert_rules"
+      ],
+      "joins": [],
+      "columns": [
+        "alert_rules.severity",
+        "alert_rules.created_at"
+      ],
+      "formula": "COUNT(*) WHERE severity = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "LOW",
+          "choices": [
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM alert_rules WHERE severity = :value AND created_at >= :since",
+      "interpretation": "Distribution of rule severities configured.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of alert_rules with severity",
+        "severity count in alert_rules"
+      ],
+      "explain": [
+        "SCAN alert_rules"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "alert",
+        "alert_rules",
+        "count",
+        "for",
+        "number",
+        "rules",
+        "severity",
+        "with"
+      ],
+      "example_queries": [
+        "show alert rules count for a severity",
+        "what is the alert rules count for a severity",
+        "alert rules count for a severity please",
+        "show me number of alert_rules with severity",
+        "show me severity count in alert_rules",
+        "alert rules count for a severity in the last 7 days",
+        "alert rules count for a severity last 30 days",
+        "number of alert_rules with severity in the last 24 hours"
+      ]
+    },
+    {
+      "id": "alert_rules_daily_count",
+      "name": "Alert Rules created per day",
+      "domain": "operations",
+      "description": "Rows created per day in alert_rules.",
+      "tables": [
+        "alert_rules"
+      ],
+      "joins": [],
+      "columns": [
+        "alert_rules.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM alert_rules WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "alert_rules per day",
+        "daily alert_rules trend"
+      ],
+      "explain": [
+        "SCAN alert_rules",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "alert",
+        "alert_rules",
+        "created",
+        "daily",
+        "day",
+        "per",
+        "rules",
+        "trend"
+      ],
+      "example_queries": [
+        "show alert rules created per day",
+        "what is the alert rules created per day",
+        "alert rules created per day please",
+        "show me alert_rules per day",
+        "show me daily alert_rules trend",
+        "alert rules created per day in the last 7 days",
+        "alert rules created per day last 30 days",
+        "alert_rules per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "alerts_by_severity",
+      "name": "Alerts by severity",
+      "domain": "security",
+      "description": "Row count of alerts grouped by severity.",
+      "tables": [
+        "alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "alerts.severity"
+      ],
+      "formula": "COUNT(*) GROUP BY severity",
+      "parameters": [],
+      "sql": "SELECT severity, COUNT(*) AS row_count FROM alerts GROUP BY severity",
+      "interpretation": "Alert criticality mix.",
+      "direction": "neutral",
+      "synonyms": [
+        "alerts by severity",
+        "severity breakdown of alerts"
+      ],
+      "explain": [
+        "SCAN alerts USING COVERING INDEX idx_alerts_severity"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "alerts",
+        "breakdown",
+        "severity"
+      ],
+      "example_queries": [
+        "show alerts by severity",
+        "what is the alerts by severity",
+        "alerts by severity please",
+        "show me alerts by severity",
+        "show me severity breakdown of alerts"
+      ]
+    },
+    {
+      "id": "alerts_severity_count",
+      "name": "Alerts count for a severity",
+      "domain": "security",
+      "description": "Count of alerts rows with a given severity in the window.",
+      "tables": [
+        "alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "alerts.severity",
+        "alerts.created_at"
+      ],
+      "formula": "COUNT(*) WHERE severity = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "LOW",
+          "choices": [
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM alerts WHERE severity = :value AND created_at >= :since",
+      "interpretation": "Alert criticality mix.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of alerts with severity",
+        "severity count in alerts"
+      ],
+      "explain": [
+        "SEARCH alerts USING INDEX idx_alerts_severity (severity=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alerts",
+        "count",
+        "for",
+        "number",
+        "severity",
+        "with"
+      ],
+      "example_queries": [
+        "show alerts count for a severity",
+        "what is the alerts count for a severity",
+        "alerts count for a severity please",
+        "show me number of alerts with severity",
+        "show me severity count in alerts",
+        "alerts count for a severity in the last 7 days",
+        "alerts count for a severity last 30 days",
+        "number of alerts with severity in the last 24 hours"
+      ]
+    },
+    {
+      "id": "alerts_by_status",
+      "name": "Alerts by status",
+      "domain": "security",
+      "description": "Row count of alerts grouped by status.",
+      "tables": [
+        "alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "alerts.status"
+      ],
+      "formula": "COUNT(*) GROUP BY status",
+      "parameters": [],
+      "sql": "SELECT status, COUNT(*) AS row_count FROM alerts GROUP BY status",
+      "interpretation": "Alert handling backlog; OPEN and ESCALATED need attention.",
+      "direction": "neutral",
+      "synonyms": [
+        "alerts by status",
+        "status breakdown of alerts"
+      ],
+      "explain": [
+        "SCAN alerts USING COVERING INDEX idx_alerts_status"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "alerts",
+        "breakdown",
+        "status"
+      ],
+      "example_queries": [
+        "show alerts by status",
+        "what is the alerts by status",
+        "alerts by status please",
+        "show me alerts by status",
+        "show me status breakdown of alerts"
+      ]
+    },
+    {
+      "id": "alerts_status_count",
+      "name": "Alerts count for a status",
+      "domain": "security",
+      "description": "Count of alerts rows with a given status in the window.",
+      "tables": [
+        "alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "alerts.status",
+        "alerts.created_at"
+      ],
+      "formula": "COUNT(*) WHERE status = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "OPEN",
+          "choices": [
+            "OPEN",
+            "INVESTIGATING",
+            "RESOLVED",
+            "DISMISSED",
+            "ESCALATED"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM alerts WHERE status = :value AND created_at >= :since",
+      "interpretation": "Alert handling backlog; OPEN and ESCALATED need attention.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of alerts with status",
+        "status count in alerts"
+      ],
+      "explain": [
+        "SEARCH alerts USING INDEX idx_alerts_status (status=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alerts",
+        "count",
+        "for",
+        "number",
+        "status",
+        "with"
+      ],
+      "example_queries": [
+        "show alerts count for a status",
+        "what is the alerts count for a status",
+        "alerts count for a status please",
+        "show me number of alerts with status",
+        "show me status count in alerts",
+        "alerts count for a status in the last 7 days",
+        "alerts count for a status last 30 days",
+        "number of alerts with status in the last 24 hours"
+      ]
+    },
+    {
+      "id": "alerts_daily_count",
+      "name": "Alerts created per day",
+      "domain": "security",
+      "description": "Rows created per day in alerts.",
+      "tables": [
+        "alerts"
+      ],
+      "joins": [],
+      "columns": [
+        "alerts.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM alerts WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "alerts per day",
+        "daily alerts trend"
+      ],
+      "explain": [
+        "SEARCH alerts USING COVERING INDEX idx_alerts_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alerts",
+        "created",
+        "daily",
+        "day",
+        "per",
+        "trend"
+      ],
+      "example_queries": [
+        "show alerts created per day",
+        "what is the alerts created per day",
+        "alerts created per day please",
+        "show me alerts per day",
+        "show me daily alerts trend",
+        "alerts created per day in the last 7 days",
+        "alerts created per day last 30 days",
+        "alerts per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "audit_logs_by_action",
+      "name": "Audit Logs by action",
+      "domain": "compliance",
+      "description": "Row count of audit_logs grouped by action.",
+      "tables": [
+        "audit_logs"
+      ],
+      "joins": [],
+      "columns": [
+        "audit_logs.action"
+      ],
+      "formula": "COUNT(*) GROUP BY action",
+      "parameters": [],
+      "sql": "SELECT action, COUNT(*) AS row_count FROM audit_logs GROUP BY action",
+      "interpretation": "Mix of audited actions; EXPORT and DELETE deserve scrutiny.",
+      "direction": "neutral",
+      "synonyms": [
+        "audit_logs by action",
+        "action breakdown of audit_logs"
+      ],
+      "explain": [
+        "SCAN audit_logs USING COVERING INDEX idx_audit_action"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "index_scan",
+      "keywords": [
+        "action",
+        "audit",
+        "audit_logs",
+        "breakdown",
+        "logs"
+      ],
+      "example_queries": [
+        "show audit logs by action",
+        "what is the audit logs by action",
+        "audit logs by action please",
+        "show me audit_logs by action",
+        "show me action breakdown of audit_logs"
+      ]
+    },
+    {
+      "id": "audit_logs_action_count",
+      "name": "Audit Logs count for a action",
+      "domain": "compliance",
+      "description": "Count of audit_logs rows with a given action in the window.",
+      "tables": [
+        "audit_logs"
+      ],
+      "joins": [],
+      "columns": [
+        "audit_logs.action",
+        "audit_logs.created_at"
+      ],
+      "formula": "COUNT(*) WHERE action = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "QUERY",
+          "choices": [
+            "QUERY",
+            "EXPORT",
+            "VIEW",
+            "UPDATE",
+            "DELETE",
+            "LOGIN"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM audit_logs WHERE action = :value AND created_at >= :since",
+      "interpretation": "Mix of audited actions; EXPORT and DELETE deserve scrutiny.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of audit_logs with action",
+        "action count in audit_logs"
+      ],
+      "explain": [
+        "SEARCH audit_logs USING INDEX idx_audit_action (action=?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "action",
+        "audit",
+        "audit_logs",
+        "count",
+        "for",
+        "logs",
+        "number",
+        "with"
+      ],
+      "example_queries": [
+        "show audit logs count for a action",
+        "what is the audit logs count for a action",
+        "audit logs count for a action please",
+        "show me number of audit_logs with action",
+        "show me action count in audit_logs",
+        "audit logs count for a action in the last 7 days",
+        "audit logs count for a action last 30 days",
+        "number of audit_logs with action in the last 24 hours"
+      ]
+    },
+    {
+      "id": "audit_logs_by_resource_type",
+      "name": "Audit Logs by resource_type",
+      "domain": "compliance",
+      "description": "Row count of audit_logs grouped by resource_type.",
+      "tables": [
+        "audit_logs"
+      ],
+      "joins": [],
+      "columns": [
+        "audit_logs.resource_type"
+      ],
+      "formula": "COUNT(*) GROUP BY resource_type",
+      "parameters": [],
+      "sql": "SELECT resource_type, COUNT(*) AS row_count FROM audit_logs GROUP BY resource_type",
+      "interpretation": "Which resources are touched most.",
+      "direction": "neutral",
+      "synonyms": [
+        "audit_logs by resource_type",
+        "resource_type breakdown of audit_logs"
+      ],
+      "explain": [
+        "SCAN audit_logs",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "audit",
+        "audit_logs",
+        "breakdown",
+        "logs",
+        "resource_type"
+      ],
+      "example_queries": [
+        "show audit logs by resource_type",
+        "what is the audit logs by resource_type",
+        "audit logs by resource_type please",
+        "show me audit_logs by resource_type",
+        "show me resource_type breakdown of audit_logs"
+      ]
+    },
+    {
+      "id": "audit_logs_resource_type_count",
+      "name": "Audit Logs count for a resource_type",
+      "domain": "compliance",
+      "description": "Count of audit_logs rows with a given resource_type in the window.",
+      "tables": [
+        "audit_logs"
+      ],
+      "joins": [],
+      "columns": [
+        "audit_logs.resource_type",
+        "audit_logs.created_at"
+      ],
+      "formula": "COUNT(*) WHERE resource_type = :value",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        },
+        {
+          "name": "value",
+          "type": "str",
+          "default": "USER",
+          "choices": [
+            "USER",
+            "TRANSACTION",
+            "ALERT",
+            "DASHBOARD",
+            "REPORT"
+          ]
+        }
+      ],
+      "sql": "SELECT COUNT(*) AS row_count FROM audit_logs WHERE resource_type = :value AND created_at >= :since",
+      "interpretation": "Which resources are touched most.",
+      "direction": "neutral",
+      "synonyms": [
+        "number of audit_logs with resource_type",
+        "resource_type count in audit_logs"
+      ],
+      "explain": [
+        "SEARCH audit_logs USING INDEX idx_audit_created_at (created_at>?)"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "audit",
+        "audit_logs",
+        "count",
+        "for",
+        "logs",
+        "number",
+        "resource_type",
+        "with"
+      ],
+      "example_queries": [
+        "show audit logs count for a resource_type",
+        "what is the audit logs count for a resource_type",
+        "audit logs count for a resource_type please",
+        "show me number of audit_logs with resource_type",
+        "show me resource_type count in audit_logs",
+        "audit logs count for a resource_type in the last 7 days",
+        "audit logs count for a resource_type last 30 days",
+        "number of audit_logs with resource_type in the last 24 hours"
+      ]
+    },
+    {
+      "id": "audit_logs_daily_count",
+      "name": "Audit Logs created per day",
+      "domain": "compliance",
+      "description": "Rows created per day in audit_logs.",
+      "tables": [
+        "audit_logs"
+      ],
+      "joins": [],
+      "columns": [
+        "audit_logs.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM audit_logs WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "audit_logs per day",
+        "daily audit_logs trend"
+      ],
+      "explain": [
+        "SEARCH audit_logs USING COVERING INDEX idx_audit_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "audit",
+        "audit_logs",
+        "created",
+        "daily",
+        "day",
+        "logs",
+        "per",
+        "trend"
+      ],
+      "example_queries": [
+        "show audit logs created per day",
+        "what is the audit logs created per day",
+        "audit logs created per day please",
+        "show me audit_logs per day",
+        "show me daily audit_logs trend",
+        "audit logs created per day in the last 7 days",
+        "audit logs created per day last 30 days",
+        "audit_logs per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "dashboards_daily_count",
+      "name": "Dashboards created per day",
+      "domain": "operations",
+      "description": "Rows created per day in dashboards.",
+      "tables": [
+        "dashboards"
+      ],
+      "joins": [],
+      "columns": [
+        "dashboards.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM dashboards WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "dashboards per day",
+        "daily dashboards trend"
+      ],
+      "explain": [
+        "SCAN dashboards",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "created",
+        "daily",
+        "dashboards",
+        "day",
+        "per",
+        "trend"
+      ],
+      "example_queries": [
+        "show dashboards created per day",
+        "what is the dashboards created per day",
+        "dashboards created per day please",
+        "show me dashboards per day",
+        "show me daily dashboards trend",
+        "dashboards created per day in the last 7 days",
+        "dashboards created per day last 30 days",
+        "dashboards per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "query_history_daily_count",
+      "name": "Query History created per day",
+      "domain": "operations",
+      "description": "Rows created per day in query_history.",
+      "tables": [
+        "query_history"
+      ],
+      "joins": [],
+      "columns": [
+        "query_history.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM query_history WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "query_history per day",
+        "daily query_history trend"
+      ],
+      "explain": [
+        "SCAN query_history",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "created",
+        "daily",
+        "day",
+        "history",
+        "per",
+        "query",
+        "query_history",
+        "trend"
+      ],
+      "example_queries": [
+        "show query history created per day",
+        "what is the query history created per day",
+        "query history created per day please",
+        "show me query_history per day",
+        "show me daily query_history trend",
+        "query history created per day in the last 7 days",
+        "query history created per day last 30 days",
+        "query_history per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "events_daily_count",
+      "name": "Events created per day",
+      "domain": "operations",
+      "description": "Rows created per day in events.",
+      "tables": [
+        "events"
+      ],
+      "joins": [],
+      "columns": [
+        "events.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM events WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "events per day",
+        "daily events trend"
+      ],
+      "explain": [
+        "SEARCH events USING COVERING INDEX idx_events_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "created",
+        "daily",
+        "day",
+        "events",
+        "per",
+        "trend"
+      ],
+      "example_queries": [
+        "show events created per day",
+        "what is the events created per day",
+        "events created per day please",
+        "show me events per day",
+        "show me daily events trend",
+        "events created per day in the last 7 days",
+        "events created per day last 30 days",
+        "events per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "metric_specs_daily_count",
+      "name": "Metric Specs created per day",
+      "domain": "operations",
+      "description": "Rows created per day in metric_specs.",
+      "tables": [
+        "metric_specs"
+      ],
+      "joins": [],
+      "columns": [
+        "metric_specs.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM metric_specs WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "metric_specs per day",
+        "daily metric_specs trend"
+      ],
+      "explain": [
+        "SCAN metric_specs",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "created",
+        "daily",
+        "day",
+        "metric",
+        "metric_specs",
+        "per",
+        "specs",
+        "trend"
+      ],
+      "example_queries": [
+        "show metric specs created per day",
+        "what is the metric specs created per day",
+        "metric specs created per day please",
+        "show me metric_specs per day",
+        "show me daily metric_specs trend",
+        "metric specs created per day in the last 7 days",
+        "metric specs created per day last 30 days",
+        "metric_specs per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "alert_history_daily_count",
+      "name": "Alert History created per day",
+      "domain": "operations",
+      "description": "Rows created per day in alert_history.",
+      "tables": [
+        "alert_history"
+      ],
+      "joins": [],
+      "columns": [
+        "alert_history.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM alert_history WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "alert_history per day",
+        "daily alert_history trend"
+      ],
+      "explain": [
+        "SEARCH alert_history USING COVERING INDEX idx_alert_history_created_at (created_at>?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": true,
+      "fast": true,
+      "access": "seek",
+      "keywords": [
+        "alert",
+        "alert_history",
+        "created",
+        "daily",
+        "day",
+        "history",
+        "per",
+        "trend"
+      ],
+      "example_queries": [
+        "show alert history created per day",
+        "what is the alert history created per day",
+        "alert history created per day please",
+        "show me alert_history per day",
+        "show me daily alert_history trend",
+        "alert history created per day in the last 7 days",
+        "alert history created per day last 30 days",
+        "alert_history per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "anomaly_history_daily_count",
+      "name": "Anomaly History created per day",
+      "domain": "operations",
+      "description": "Rows created per day in anomaly_history.",
+      "tables": [
+        "anomaly_history"
+      ],
+      "joins": [],
+      "columns": [
+        "anomaly_history.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM anomaly_history WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "anomaly_history per day",
+        "daily anomaly_history trend"
+      ],
+      "explain": [
+        "SCAN anomaly_history",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "anomaly",
+        "anomaly_history",
+        "created",
+        "daily",
+        "day",
+        "history",
+        "per",
+        "trend"
+      ],
+      "example_queries": [
+        "show anomaly history created per day",
+        "what is the anomaly history created per day",
+        "anomaly history created per day please",
+        "show me anomaly_history per day",
+        "show me daily anomaly_history trend",
+        "anomaly history created per day in the last 7 days",
+        "anomaly history created per day last 30 days",
+        "anomaly_history per day in the last 24 hours"
+      ]
+    },
+    {
+      "id": "metric_windows_daily_count",
+      "name": "Metric Windows created per day",
+      "domain": "operations",
+      "description": "Rows created per day in metric_windows.",
+      "tables": [
+        "metric_windows"
+      ],
+      "joins": [],
+      "columns": [
+        "metric_windows.created_at"
+      ],
+      "formula": "COUNT(*) GROUP BY DATE(created_at)",
+      "parameters": [
+        {
+          "name": "days",
+          "type": "int",
+          "default": 7,
+          "min": 1,
+          "max": 3650
+        }
+      ],
+      "sql": "SELECT DATE(created_at) AS day, COUNT(*) AS row_count FROM metric_windows WHERE created_at >= :since GROUP BY DATE(created_at) ORDER BY day",
+      "interpretation": "Volume trend; breaks in the pattern indicate incidents or campaigns.",
+      "direction": "neutral",
+      "synonyms": [
+        "metric_windows per day",
+        "daily metric_windows trend"
+      ],
+      "explain": [
+        "SCAN metric_windows",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ],
+      "indexed": false,
+      "fast": false,
+      "access": "full_scan",
+      "keywords": [
+        "created",
+        "daily",
+        "day",
+        "metric",
+        "metric_windows",
+        "per",
+        "trend",
+        "windows"
+      ],
+      "example_queries": [
+        "show metric windows created per day",
+        "what is the metric windows created per day",
+        "metric windows created per day please",
+        "show me metric_windows per day",
+        "show me daily metric_windows trend",
+        "metric windows created per day in the last 7 days",
+        "metric windows created per day last 30 days",
+        "metric_windows per day in the last 24 hours"
+      ]
+    }
+  ]
+}

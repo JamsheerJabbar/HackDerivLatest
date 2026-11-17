@@ -1,0 +1,132 @@
+[
+  {
+    "name": "vector-upsert",
+    "input": {
+      "owner": null,
+      "docs": [
+        {"text": "table transactions", "metadata": {"user_id": null, "session_id": null, "level": "table", "table": "transactions", "indexed": true, "joins": ["users"], "fast": true, "interpretation": "money movements", "created_at": "2026-01-01T00:00:00Z"}},
+        {"text": "column transactions.amount", "metadata": {"user_id": null, "session_id": null, "level": "column", "table": "transactions", "indexed": false, "joins": [], "fast": false, "interpretation": "amount", "created_at": "2026-01-01T00:00:00Z"}},
+        {"text": "view v_flagged", "metadata": {"user_id": null, "session_id": null, "level": "table", "table": "v_flagged", "indexed": false, "joins": [], "fast": true, "interpretation": "flagged txns", "created_at": "2026-01-01T00:00:00Z"}}
+      ],
+      "query": "transactions",
+      "search_as": "userA",
+      "top_k": 10
+    },
+    "expected": {"count": 3, "metadata_keys": ["user_id", "session_id", "level", "table", "indexed", "joins", "fast", "interpretation", "created_at"]},
+    "kind": "happy"
+  },
+  {
+    "name": "vector-isolation",
+    "input": {
+      "docs": [
+        {"text": "secret doc of B", "metadata": {"user_id": "userB", "level": "table", "table": "t"}},
+        {"text": "doc of A", "metadata": {"user_id": "userA", "level": "table", "table": "t"}}
+      ],
+      "query": "secret doc of B",
+      "search_as": "userA",
+      "top_k": 10
+    },
+    "expected": {"forbidden_user_ids": ["userB"], "allowed_user_ids": ["userA", null]},
+    "kind": "error"
+  },
+  {
+    "name": "vector-global-catalog-visible",
+    "input": {
+      "docs": [
+        {"text": "global catalog doc", "metadata": {"user_id": null, "level": "metric", "table": "t"}},
+        {"text": "B private", "metadata": {"user_id": "userB", "level": "metric", "table": "t"}}
+      ],
+      "query": "global catalog doc",
+      "search_as": "userA",
+      "top_k": 10
+    },
+    "expected": {"texts": ["global catalog doc"]},
+    "kind": "edge",
+    "added": true
+  },
+  {
+    "name": "cache-hit",
+    "input": {"query": "flagged transactions last 7 days", "user_id": "userA", "role": "user", "catalog_version": "v1", "value": {"rows": [[1, "x"], [2, "y"]], "cache_hit": false}, "ttl": 60},
+    "expected": {"first_get": null, "second_get_equals_value": true, "same_key": true, "ttl_set": true},
+    "kind": "happy"
+  },
+  {
+    "name": "cache-cross-user",
+    "input": {"query": "flagged transactions last 7 days", "role": "user", "catalog_version": "v1", "user_a": "userA", "user_b": "userB", "value_a": {"rows": [["A"]]}},
+    "expected": {"keys_differ": true, "b_get": null, "a_get_equals_value": true},
+    "kind": "edge"
+  },
+  {
+    "name": "cache-invalidate",
+    "input": {"query": "flagged transactions last 7 days", "user_id": "userA", "role": "user", "version_old": "v1", "version_new": "v2", "value": {"rows": [[1]]}},
+    "expected": {"keys_differ": true, "get_after_bump": null, "old_still_readable": true},
+    "kind": "edge"
+  },
+  {
+    "name": "cache-role-in-key",
+    "input": {"query": "q", "user_id": "userA", "roles": ["user", "super"], "catalog_version": "v1"},
+    "expected": {"keys_differ": true},
+    "kind": "edge",
+    "added": true
+  },
+  {
+    "name": "cache-key-normalization",
+    "input": {"query_a": "Flagged  Transactions", "query_b": "  flagged transactions ", "user_id": "userA", "role": "user", "catalog_version": "v1"},
+    "expected": {"keys_equal": true},
+    "kind": "edge",
+    "added": true
+  },
+  {
+    "name": "cache-ttl-expiry",
+    "input": {"key": "k-ttl", "value": {"a": 1}, "ttl": 1},
+    "expected": {"redis_ttl_positive_and_le": 1, "get_after_expiry": null},
+    "kind": "edge",
+    "added": true
+  },
+  {
+    "name": "cache-redis-unavailable",
+    "input": {"key": "k", "value": {"a": 1}, "ttl": 60},
+    "expected": {"get": null, "set_raises": false, "single_flight_result": "computed"},
+    "kind": "error"
+  },
+  {
+    "name": "cache-single-flight-concurrent",
+    "input": {"key": "sf-key", "concurrency": 10},
+    "expected": {"coro_calls": 1, "all_results_equal": true},
+    "kind": "edge"
+  },
+  {
+    "name": "cache-empty-query-key",
+    "input": {"query": "   ", "user_id": "userA", "role": "user", "catalog_version": "v1"},
+    "expected": {"key_is_str": true, "deterministic": true},
+    "kind": "edge",
+    "added": true
+  },
+  {
+    "name": "vector-pgvector-unavailable",
+    "input": {"query": "anything", "search_as": "userA", "top_k": 5},
+    "expected": {"raises": "VectorStoreUnavailable", "backend_search_called_without_user_filter": false},
+    "kind": "error"
+  },
+  {
+    "name": "vector-empty-store",
+    "input": {"query": "anything", "search_as": "userA", "top_k": 5},
+    "expected": {"results": []},
+    "kind": "edge",
+    "added": true
+  },
+  {
+    "name": "vector-top-k-boundary",
+    "input": {"n_docs": 5, "top_k": 2, "search_as": "userA", "query": "doc"},
+    "expected": {"max_results": 2},
+    "kind": "boundary",
+    "added": true
+  },
+  {
+    "name": "vector-duplicate-upsert",
+    "input": {"doc": {"text": "dup doc", "metadata": {"user_id": "userA", "level": "table", "table": "t"}}, "times": 2, "search_as": "userA", "query": "dup doc", "top_k": 10},
+    "expected": {"note": "documented behavior unspecified in SPECS; asserts only that search succeeds and every result belongs to userA", "allowed_user_ids": ["userA"]},
+    "kind": "edge",
+    "added": true
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "_comment": "Logical (canonical, derivinsight_schema.sql) -> physical column mapping profiles. A profile is chosen by matching the physical schema. Columns with no physical counterpart make the metrics that use them unavailable (never fabricated).",
+  "profiles": {
+    "legacy_live": {
+      "description": "Live derivinsightnew.db shape: users(username, age, ...) without email/full_name/country; only users, transactions, login_events; messy timestamp text.",
+      "match": {"users": {"present": ["username"], "absent": ["full_name"]}},
+      "columns": {
+        "users.full_name": {"physical": "username"}
+      },
+      "normalize_timestamps": true,
+      "value_maps": {
+        "login_events.device_type": {"DESKTOP": "Desktop", "MOBILE": "Mobile", "TABLET": "Tablet"}
+      }
+    }
+  }
+}

@@ -1,198 +1,368 @@
 # 🦅 InsightOS: The Virtual CIO for Real-Time Financial Intelligence
 
-[![Demo Verification](https://img.shields.io/badge/Demo-Verified_100%25-brightgreen.svg)]()
 [![Orchestration](https://img.shields.io/badge/Orchestration-LangGraph-blue.svg)]()
-[![Intelligence](https://img.shields.io/badge/Engine-Gemini_2.5_Flash-orange.svg)]()
+[![Intelligence](https://img.shields.io/badge/Engine-Gemini_2.5-orange.svg)]()
+[![Vector store](https://img.shields.io/badge/Vectors-pgvector-336791.svg)]()
 
-> **InsightOS** transforms complex natural language into actionable executive-level business intelligence. It’s not just an NL2SQL tool; it’s an AI-driven decision engine that reasons across your entire database to provide strategic recommendations.
+> **InsightOS** turns natural-language questions into executive-level business intelligence. Answers come from a
+> **catalog of vetted, parameterized metrics first**; free-form SQL generation is a guarded last resort. Every answer is
+> cached, user-isolated, audited, and measured by an evaluation framework.
+
+**Contents:** [Architecture](#-architecture) · [Data modelling](#-data-modelling) · [Evaluation](#-evaluation) ·
+[Guardrails](#-guardrails) · [Getting started & how to run](#-getting-started--how-to-run-each-part) ·
+[API reference](#-api-reference-important-endpoints-by-importance) · [Known limitations](#-known-limitations)
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ Architecture
 
-InsightOS is really two products sharing one brain. Both answer questions the same way —
-understand it, write SQL, check it, run it, chart it — but they call that machinery in opposite
-directions: **Sentinel** calls it dozens of times a minute on questions it invents for itself;
-the **Query** feature calls it once, on a question a person just typed.
+InsightOS is two products sharing one engine. **Query** answers one question a person just typed. **Sentinel** invents
+its own audit questions and runs them in bulk. Both use the same reliability stack (retries, fallback, strict parsing,
+audit); Query adds the catalog-first answer path and caching.
 
-### Primary architecture — the Sentinel scan (autonomous)
-
-The dashboard opens one live connection and never asks again. Everything else — deciding what to
-investigate, scoring how dangerous the answers are, deciding whether to dig deeper, and writing an
-executive summary — happens on its own on the server and streams back down that same connection,
-step by step, as it happens.
+### 1. Query: catalog-first, generation only as a guarded last resort
 
 ```mermaid
 flowchart TD
-    UI(["Dashboard opens one live connection"]) --> START["Start the scan<br/><small><i>stream_sentinel_scan()</i></small>"]
-    MEM["Recall past scans<br/><small><i>get_adaptive_context()</i></small>"] --> BRAIN
-    START --> BRAIN["Decide what to investigate this run<br/><small><i>brainstorm_missions()</i></small>"]
-    BRAIN --> RUN["Investigate every question at once, then score it<br/><small><i>run_mission() → score()</i></small>"]
-    RUN --> STREAM(["Show results the moment they land"])
-    STREAM --> DEEP["Chase anything that looks risky<br/><small><i>generate_followups()</i></small>"]
-    DEEP -.->|"loops back in, max 2 rounds"| RUN
-    STREAM --> CORR["Look for one pattern across every finding<br/><small><i>correlate()</i></small>"]
-    CORR --> REPORT["Write the executive report<br/><small><i>generate() — narrative</i></small>"]
-    REPORT --> SAVE["Remember this run<br/><small><i>record_scan()</i></small>"]
-    SAVE -.->|"shapes what the next scan asks"| MEM
-    RUN -.->|"HIGH / CRITICAL findings"| SLACK[("Slack")]
-    REPORT -.->|"every report"| SLACK
-
-    style UI fill:#0e749022,stroke:#0e7490
-    style STREAM fill:#0e749022,stroke:#0e7490
-    style SAVE fill:#0e749022,stroke:#0e7490
-    style SLACK fill:#eef1f7,stroke:#5b6478
+    REQ(["POST /api/v1/query"]) --> ID["Identity<br/><small>JWT: user_id + role</small>"]
+    ID --> SESS["Session ownership check<br/><small>403 if the session belongs to someone else</small>"]
+    SESS --> CACHE{"Cache hit?<br/><small>Redis · key = query + user + role + catalog version</small>"}
+    CACHE -->|"yes"| OUT
+    CACHE -->|"no"| RET["Retrieve candidate metrics<br/><small>intent · multi-query · hybrid vector+BM25 · rerank</small>"]
+    RET --> RES["Resolve to ONE template<br/><small>semantic confidence ≥ 0.4, parameters extracted &amp; validated</small>"]
+    RES -->|"matched"| MAP["Map catalog SQL onto the real schema<br/><small>column-mapping layer</small>"]
+    MAP --> EXEC["Execute as a bound SELECT"] --> OUT
+    RES -->|"no match / metric unavailable"| NM["no_match<br/><small>says what data is missing</small>"]
+    NM -.->|"user: 'not what I wanted'"| GATE{"role == super?"}
+    GATE -->|"no"| DENY(["403 generation_requires_super"])
+    GATE -->|"yes"| GEN["Free-form SQL generation<br/><small>≤ 3 attempts, stronger model each time</small>"]
+    GEN -->|"3 failures"| FB["Deterministic fallback<br/><small>catalog metric with ≥ 80% similarity, else an error message</small>"]
+    GEN --> OUT
+    FB --> OUT
+    OUT(["Response + chat message + insight + audit row"])
 ```
 
-1. **One connection for the whole scan.** The dashboard opens a single live connection and never
-   has to ask again. Every stage — deciding what to investigate, running dozens of checks, chasing
-   risky ones deeper, comparing findings, writing the final report — plays out over that one
-   connection and appears the instant it happens, instead of all at once at the end.
-2. **What to investigate changes every run.** `brainstorm_missions()` asks an AI to write this
-   run's audit questions across four areas — security, compliance, risk, operations — but first
-   looks back at the last five runs: areas that kept turning out risky get more attention this
-   time, anything that was **CRITICAL** last run gets a deeper follow-up, and exact questions asked
-   recently are avoided so the scan doesn't repeat itself.
-3. **Every question is fully investigated, all at the same time.** Each audit question is a
-   plain-English ask. `run_mission()` answers it with the same understand-it → write-SQL →
-   check-it → run-it → chart-it sequence a person typing a question would trigger — and every
-   question in the batch runs at once rather than one after another, so a dozen checks finish
-   about as fast as one.
-4. **Risk is measured, not guessed.** Instead of trusting the AI's own sense of how alarming
-   something sounds, `score()` works out a 0–100 number from what the data actually shows: how
-   many people are affected, how much money is involved, how fast it's happening, whether flagged
-   accounts are involved, and how severe the original question was meant to be.
-5. **Nothing waits for the slowest question.** Every question's log and result are pushed out the
-   moment they're ready, each one clearly tagged so results from different questions never get
-   mixed up. The dashboard fills in card by card as the scan runs.
-6. **Anything risky gets a second, sharper look.** A question that comes back with real risk (a
-   score of 40 or higher) is handed to `generate_followups()`, which writes up to two new, more
-   specific questions aimed at the exact people, accounts, or amounts just found. Those follow-ups
-   get investigated the same way as any other question, and can chain up to two rounds deep.
-7. **Separate findings get checked for a shared cause.** Once every question — including every
-   follow-up — has finished, `correlate()` looks for people, IP addresses, or countries that show
-   up in more than one finding. The same identity turning up across unrelated checks, especially
-   across different domains, is treated as one connected threat instead of several disconnected
-   alerts.
-8. **Everything gets rolled up into one report.** The narrative step takes every finding from this
-   run, plus any connected threats, and writes a single plain-language brief: a short summary, the
-   top threats by name, what to do about them immediately, and what to keep watching.
-9. **The scan learns from itself.** `record_scan()` saves this run's risk levels and standout
-   findings for the history view, and feeds directly back into step 2: the next scan reads this
-   exact record to decide which areas deserve more attention and which questions have already been
-   asked enough.
-10. **Slack never slows the scan down.** Any HIGH or CRITICAL finding — a single check or the
-    final report — is posted to a Slack channel in the background, launched and left to run on its
-    own, so a slow or failing Slack message can never hold up the scan.
+1. **Identity & isolation first.** The caller's `user_id` and `role` come from a JWT. A session id owned by another user is
+   rejected before any work happens. The cache key includes user, role and catalog version, so users never share answers.
+2. **Parameterized first.** `app/modules/preprocessing/service.py` finds the best metrics for the question: a small
+   model classifies intent/complexity, complex questions are split into sub-queries, vector search and BM25 are fused,
+   and the shortlist is re-ranked (retrieval score, similarity to a pre-computed answer, and a gentle boost for vital
+   tables). `app/modules/param_resolver.py` then picks one template and extracts its parameters (`last 30 days`,
+   `top 5`, `over 50k`, enum values). Nothing is generated by an LLM on this path.
+3. **The catalog is mapped onto the real database.** Catalog SQL is written once against the canonical schema.
+   `app/core/schema_mapping.py` rewrites it for the connected database (renamed columns, text timestamps, integer flags,
+   enum spellings). Metrics the database cannot support are filtered out up front, and if the *best* match is one of
+   them the reply names the missing data instead of answering a weaker question.
+4. **Generation is gated.** Free-form SQL is only produced when the user says they are dissatisfied **and** their role is
+   `super`. It runs through `generate → validate → execute` as one attempt, retried up to 3 times with a stronger model
+   (`gemini-2.5-flash-lite` → `gemini-2.5-flash` → `gemini-2.5-pro`), then the deterministic fallback.
+5. **Everything is recorded.** Each turn is stored in the user's session (server-side history is authoritative),
+   insights are stored with timestamps, and an audit row (SQL hashed, never raw) goes to a separate audit database.
 
-### Secondary product — on-demand query → dashboards & alerts
+The underlying LangGraph pipeline (`app/orchestration/workflow.py`) is:
+`classify_intent → (clarification | guidance | generate_sql) → present → (visualization ‖ insight) → format_response`.
 
-The interactive counterpart to Sentinel: a person asks one question, waits for one answer, and can
-turn that answer into something that lasts — either a saved dashboard chart or a standing alert
-rule. Neither path brainstorms its own questions, chases anything deeper, or compares itself
-against other findings — it does exactly what was asked, once.
+### 2. Sentinel: autonomous scan, rated by humans
+
+The dashboard opens one live connection (SSE). The server decides what to investigate, runs every question concurrently
+through the same pipeline, scores risk from the data, chases risky findings (max 2 rounds), correlates shared entities,
+writes an executive narrative, and remembers the run to shape the next one. HIGH/CRITICAL findings go to Slack in the
+background.
 
 ```mermaid
 flowchart TD
-    ASK(["Someone asks something in chat"])
-    ASK -->|"ask a question"| ANS["Answer the question<br/><small><i>query_database()</i></small>"]
-    ASK -->|"define a monitor"| RULE["Turn the request into a precise rule<br/><small><i>generate_metric()</i></small>"]
-
-    ANS --> REPLY1["Reply — an answer, or a follow-up question"]
-    REPLY1 --> RENDER["Render the chart"]
-    RENDER --> DASH["Save it as a dashboard, on command<br/><small><i>create_dashboard()</i></small>"]
-
-    RULE --> REPLY2["Reply — the rule, or what's missing"]
-    REPLY2 --> REG["Register the rule<br/><small><i>create_metric()</i></small>"]
-    REG --> WATCH["Watch for it, continuously<br/><small><i>AlertEngineService</i> — background worker</small>"]
-    WATCH --> ALERT["Surface it as an active alert"]
-
-    style ASK fill:#6d43d622,stroke:#6d43d6
-    style DASH fill:#6d43d622,stroke:#6d43d6
-    style WATCH fill:#6d43d622,stroke:#6d43d6
+    UI(["Dashboard opens one live connection"]) --> START["Start the scan<br/><small>GET /api/v1/sentinel/scan/stream</small>"]
+    MEM["Recall past scans<br/><small>get_adaptive_context()</small>"] --> BRAIN
+    START --> BRAIN["Decide what to investigate<br/><small>brainstorm_missions() · strict JSON parse · 3 attempts</small>"]
+    BRAIN --> RUN["Investigate every question at once, then score it<br/><small>run_mission() → score()</small>"]
+    RUN --> STREAM(["Results stream in as they land"])
+    STREAM --> DEEP["Chase anything risky<br/><small>generate_followups()</small>"]
+    DEEP -.->|"max 2 rounds"| RUN
+    STREAM --> CORR["Find one pattern across findings<br/><small>correlate()</small>"]
+    CORR --> REPORT["Executive narrative"]
+    REPORT --> SAVE["Remember this run + store insights<br/><small>record_scan() · persist_scan()</small>"]
+    SAVE -.-> MEM
+    RUN -.->|"HIGH / CRITICAL"| SLACK[("Slack")]
 ```
 
-1. **One ask, one answer.** The chat sends exactly the question a person typed — nothing is
-   invented or batched on top of it. `query_database()` waits for the full answer before replying.
-2. **Same pipeline as Sentinel, used once.** The question goes through the identical steps every
-   Sentinel check goes through — understand it, write SQL, check it, retry automatically if it's
-   wrong (up to three times), run it, and pick a chart and an insight for it. The only difference
-   from Sentinel is that this happens for one question instead of a whole batch.
-3. **An unclear question keeps the conversation going.** If the question is too vague, off-topic,
-   or actually about how the system works rather than the data, the reply is a clarifying question
-   instead of an answer — the next turn in the conversation, not a failure.
-4. **A good answer is already chart-ready.** A successful reply already includes the data, a
-   recommended chart type chosen to fit the shape of that data (bar, line, pie, or table), and a
-   plain-language insight — the chart appears on screen immediately.
-5. **"Keep this" is a separate, deliberate action.** Turning a chart into a saved dashboard widget
-   only happens when it's explicitly asked for. `create_dashboard()` writes the chart and its
-   settings to permanent storage under a chosen name, separate from the question that produced it.
-6. **Asking to be monitored runs a different, smaller pipeline.** A request to watch for something
-   instead of just seeing it once goes through its own three-step process: confirm it's really an
-   alert request, work out which kind of event it's about (a transaction, a login, a user), then
-   have the AI write the exact rule — `generate_metric()`.
-7. **The result is a rule, not an answer.** Instead of data, this pipeline produces a precise
-   definition: what to count, an optional condition to filter on, how to aggregate it (count, sum,
-   or average), a time window, and a threshold — e.g. "more than 3 failed logins in 60 seconds." A
-   missing piece, like the threshold, comes back as a question rather than a guess.
-8. **Registering the rule ends the conversation.** `create_metric()` saves the finished rule as a
-   standing definition. The chat exchange that created it is complete at that point — nothing
-   about actually enforcing the rule happens as part of that request.
-9. **Enforcing the rule is a separate, always-on job.** A background worker keeps checking live
-   activity against every saved rule on a rolling time window, entirely independent of the request
-   that created the rule. The moment activity crosses a threshold, it's logged as a breach and
-   shows up immediately as an active alert.
+**Human-in-the-loop.** Each stored insight can be rated 👍/👎 by its owner. A 👎 opens a **human-review chat thread**
+(reviewers with role `admin`/`super` reply in it) and notifies reviewers. When one user's false ratings exceed **3**
+(exactly 3 does not flag), an anomaly flag is raised once, a backend alert is emitted, and the **Insight Anomaly
+Detection** button on the Sentinel dashboard turns red. Scan history is owner-only.
 
-### The one-line difference
+### 3. Alerts & dashboards (secondary)
 
-- **Sentinel** — invents its own questions, investigates all of them at once, chases whatever looks
-  risky, looks for shared patterns across everything it found, and rewrites its own next run — no
-  person in the loop until the report is ready.
-- **Query & alerts** — does exactly what it was asked, once, and either shows it on screen or files
-  it as a standing rule — scoped to one request, finished the moment the reply is sent.
+`POST /api/v1/alert` turns "tell me when…" into a precise metric rule (what to count, filter, window, threshold); a
+background engine (`AlertEngineService`) enforces saved rules on a rolling window and surfaces breaches as active
+alerts. Chat answers can be saved as dashboard widgets via `POST /api/v1/dashboards`.
+
+### Where things live
+
+| Concern | Module |
+| :--- | :--- |
+| Query endpoint, session/insight/audit orchestration | `app/api/endpoints.py` (`handle_query`, `answer_query`) |
+| Catalog-first resolution, generation gate | `app/modules/param_resolver.py` |
+| Retrieval (intent, multi-query, hybrid, rerank, join compression) | `app/modules/retrieval/`, `app/modules/preprocessing/service.py` |
+| Metric catalog & schema profiling | `app/modules/catalog/` |
+| Column mapping (canonical → physical schema) | `app/core/schema_mapping.py`, `app/data/schema_mappings.json` |
+| LLM pipeline, retries, fallback, strict parsing | `app/orchestration/workflow.py`, `app/services/{llm,retry_policy,deterministic_fallback,backend_alerts}.py` |
+| Cache, vectors, embeddings | `app/services/{cache,vector_store,embeddings}.py` |
+| Identity | `app/core/auth.py` |
+| Sessions, insights, audit, human handoff | `app/services/{session_store,insight_store,audit_db,human_handoff}.py` |
+| Sentinel | `app/orchestration/sentinel_agent.py`, `app/api/sentinel.py` |
+| Evaluation | `app/eval/`, `app/api/eval_endpoints.py`, `tests/eval/` |
+| Frontend (React + Vite) | `frontend-react/src/components/` |
 
 ---
 
-## ✨ Key Features
+## 🗄️ Data modelling
 
-*   **🛡️ Multi-Domain Intelligence**: Dedicated prompts for Operations, Risk, Compliance, and Security.
-*   **📊 Dynamic Visualization**: Automatically chooses the best chart (Bar, Line, Pie, or Table) based on data distribution.
-*   **⚡ Sub-Second Latency**: Optimized query generation using Gemini 2.5 Flash.
-*   **🔌 Plug-and-Play**: Seamless integration with existing SQLite/SQLAlchemy databases.
+### Business data (canonical schema: `app/files/derivinsight_schema.sql`, `app/files/alerts_schema.sql`)
 
----
-
-## 🚀 Getting Started
-
-### 1. Environment Setup
-```bash
-python -m venv venv
-./venv/Scripts/activate  # Windows
-pip install -r requirements.txt
+```mermaid
+erDiagram
+    users ||--o{ transactions : "user_id"
+    users ||--o{ login_events : "user_id (nullable)"
+    users ||--o{ alerts : "user_id (nullable)"
+    users ||--o{ audit_logs : "actor_id"
+    users ||--o{ dashboards : "owner_id"
+    users ||--o{ query_history : "user_id"
+    alert_rules ||--o{ alerts : "rule_id"
+    transactions ||--o{ alerts : "txn_id (nullable)"
+    metric_specs ||--o{ alert_history : "metric_id"
+    metric_specs ||--o| anomaly_history : "metric_id"
+    metric_specs ||--o{ metric_windows : "metric_id"
 ```
 
-### 2. Configuration
-Create a `.env` file with your Google Gemini API Key:
-```env
-GOOGLE_API_KEY=your_gemini_key
-DB_PATH=./derivinsightnew.db
-```
-
-### 3. Run the Platform
-```bash
-python -m uvicorn app.main:app --reload --port 8080
-```
-
----
-
-## 💎 Demo Verification (Try These)
-
-| Domain | Executive Question | Impact |
+| Table | Role | Indexed columns (all single-column unless noted) |
 | :--- | :--- | :--- |
-| **Risk** | *"Show me all users and their risk levels."* | **Critical Profile Alert** |
-| **Security**| *"Show me failed logins by reason and IP address."* | **Threat Intelligence** |
-| **Growth** | *"Which countries have the highest active users?"* | **Market Optimization** |
-| **Fraud** | *"List all transactions in 'FLAGGED' status."* | **AML Monitoring** |
+| `transactions` | main fact table | user_id, status, txn_type, amount_usd, created_at, instrument, **(user_id, created_at)** |
+| `users` | join hub / dimension | country, kyc_status, risk_level, account_status, created_at |
+| `alerts` | detection output | user_id, severity, status, rule_name, created_at |
+| `login_events` | security facts | user_id, status, ip_address, country, created_at |
+| `audit_logs` | business audit trail | actor_id, action, created_at |
+| `alert_rules`, `dashboards`, `query_history` | config / app metadata | owner_id, is_deployed (dashboards) |
+| `events`, `metric_specs`, `alert_history`, `anomaly_history`, `metric_windows` | alert-engine internals | table_name, created_at, (table_name, created_at), metric_id, (metric_id, event_timestamp) … |
+| views `v_flagged_transactions`, `v_open_alerts`, `v_daily_summary`, `v_high_risk_users` | pre-joined read paths | — |
+
+Table **weights** used for reranking (`app/data/table_weights.json`): transactions 1.0 · alerts 0.95 · users 0.9 ·
+login_events 0.8 · the four views 0.75 · engine tables 0.35–0.5 · dashboards/query_history 0.25.
+
+### Physical databases can differ: the column-mapping layer
+
+The bundled `derivinsightnew.db` is **not** the canonical shape: `users.username` instead of `full_name`, no
+`email`/`country`, only three tables, an `INTEGER` `is_pep`, `Desktop` instead of `DESKTOP`, and timestamps in three text
+formats (`2023-01-15T09:30:00Z`, `3/31/24 6:07`, `2024-04-18 21:53:35`). `app/core/schema_mapping.py` detects the shape
+(profiles in `app/data/schema_mappings.json`), rewrites catalog SQL with `sqlglot`, and reports which metrics are
+**unavailable** (with the reason) when a table or column is missing, instead of guessing. On the bundled database, 43 of
+83 metrics are *runnable*. **Runnable is not the same as correct:** the mapping does not yet reconcile differing
+**enum vocabularies** (see [Known limitations](#-known-limitations)), so a few "available" enum-parameter metrics return
+zero or incomplete results on that database.
+
+### Metric catalog (`app/data/metric_catalog.json`, 83 metrics)
+
+Generated from the schema by `app/modules/catalog/` (curated cross-table templates plus per-column distributions,
+filtered counts and daily trends). Each metric carries: `sql` (named binds, SELECT only, portable across SQLite/Postgres),
+`parameters` (typed, bounded), `tables`/`joins`/`columns`, `interpretation` and `direction`
+(`higher_is_worse|better|neutral`), `domain`, `example_queries`, and **`indexed` / `fast` / `access`** derived from
+`EXPLAIN` (`seek`, `index_scan`, `full_scan`). Every metric is executed in an in-memory sandbox during generation.
+
+### Stores owned by the application
+
+| Store | Contents | Default (dev) → production |
+| :--- | :--- | :--- |
+| Business DB | the tables above | `DATABASE_URL` (SQLite file → PostgreSQL) |
+| `nl2sql_meta` | `vector_documents` (pgvector, HNSW cosine, 384-dim), `chat_sessions`, `chat_messages`, `insights`, `insight_ratings`, `insight_anomaly_flags`, `scan_owners`, `handoff_threads`, `handoff_messages`, `eval_runs`, `eval_items` | local SQLite files → one PostgreSQL database (`META_DATABASE_URL`, `SESSION_DATABASE_URL`, `EVAL_DATABASE_URL`) |
+| `nl2sql_audit` | `audit_events` (SQL stored as sha256, never raw) | `AUDIT_DATABASE_URL`, a **separate** database |
+| Redis | prompt → result cache, TTL 900 s, single-flight | `REDIS_URL` (degrades gracefully if down) |
+
+**Vector metadata** on every row: `user_id` (None = global catalog), `session_id`, `level`
+(`table|column|value|metric|template`), `table`, `indexed`, `joins`, `fast`, `interpretation`, `created_at`. Every search
+filters on `user_id`; a search without one sees global catalog documents only.
+
+---
+
+## 📈 Evaluation
+
+A regression framework measures retrieval and generation so quality changes are visible.
+
+| Piece | What it does |
+| :--- | :--- |
+| **Golden dataset** `app/data/golden_dataset.json` | 290 questions generated from the catalog: paraphrases, typos, abbreviations, time windows and multi-metric questions (225 simple, 24 join, 41 complex). Expected SQL and expected rows come from a seeded in-memory sandbox with production-like skew. Deterministic per seed. |
+| **Retrieval metrics** | precision@k, recall@k, MRR, hit-rate |
+| **Generation metrics** | execution accuracy (order-insensitive row match), **faithfulness** (are the numbers in the answer grounded in the rows), **relevancy** (embedding similarity of question and answer); an optional LLM judge parses strictly in one shot |
+| **Regression gate** | a run is `regressed` if precision, recall, faithfulness or relevancy drops by more than `EVAL_MAX_DROP` (0.05) versus the latest non-regressed run; `tests/eval` also enforces committed floors in `app/data/eval_baseline.json` |
+| **Dashboard** | Eval view in the frontend: 4 metric time series, run table, "Run evaluation" button |
+
+Measured on the golden set with the real embedding model (vector-only baseline → full pipeline): recall@5 0.931 → 0.993,
+MRR 0.875 → 0.954. **Treat these as ceilings:** golden questions are derived from catalog wording, so they flatter
+retrieval. See [Known limitations](#-known-limitations).
+
+---
+
+## 🛡️ Guardrails
+
+| Risk | Guardrail |
+| :--- | :--- |
+| Generated SQL modifies data | `assert_select_only` parses the full SQL tree (not just the root): rejects INSERT/UPDATE/DELETE/DDL, writable CTEs, `SELECT INTO`, locking clauses and side-effect functions (`pg_sleep`, `lo_import`, `set_config`, …). Enforced in the validator, again before execution, and again in the endpoint. Catalog templates are also bound-parameter only. |
+| Free-form generation by anyone | Only when the user is dissatisfied **and** `role == "super"`; otherwise HTTP 403 `generation_requires_super`. A parameterized attempt always comes first. |
+| Cross-user data leakage | Per-user sessions (foreign session → 403), user-scoped vector search, user in the cache key, owner-only insights/ratings/scan history, user filter on every vector query. |
+| Forged identity | JWT HS256 with required `exp`/`sub`, role re-read on every request, **no default secret**; header identity exists for dev only and is off by default. |
+| Runaway LLM cost / loops | Hard cap of 3 attempts (a stronger model on attempts 2–3), one retry layer only, provider calls kept off the event loop. |
+| LLM returns junk | Output is parsed **once** (single JSON object, optional ```json fence); failure raises and emits a **backend alert** (log + Slack, throttled). No repair loops. |
+| Everything fails | Deterministic fallback: run a catalog metric only if it matches the question with ≥ 80% semantic similarity (exactly 0.80 passes); otherwise return an error message. |
+| Answering the wrong question | Match confidence threshold; unavailable metrics are never substituted for the real best match. |
+| Untraceable actions | Every request, denial and failure is audited asynchronously to a separate database; SQL is stored only as a hash; tokens, rows and secrets are stripped from audit detail. |
+| Bad insights go unnoticed | 👎 ratings open a human-review thread; more than 3 false ratings flags an anomaly. |
+| Cache serving stale answers | Key includes the catalog version; "not what I wanted" bypasses the cache. |
+
+Remember to also run generated SQL under a **SELECT-only database role** in production; the guard above is a denylist.
+
+---
+
+## 🚀 Getting started & how to run each part
+
+**Requirements:** Python 3.10+ (Docker image uses 3.11), Node 18+ (tested on 20), optional Redis, optional PostgreSQL
+17/18 with pgvector.
+
+### 1. Install and configure
+```bash
+python -m venv venv && source venv/bin/activate        # Windows: .\venv\Scripts\activate
+pip install -r requirements.txt
+cd frontend-react && npm install && cd ..
+```
+
+Create `.env` (never commit it). Only `GEMINI_API_KEY` is required to start:
+
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | – | LLM access (required) |
+| `DATABASE_URL` | `sqlite:///./derivinsightnew.db` | business database (SQLite or PostgreSQL) |
+| `JWT_SECRET`, `AUTH_REQUIRED` | unset / `false` | set the secret and `AUTH_REQUIRED=true` in any shared environment; otherwise all callers are one shared "anonymous" user |
+| `VECTOR_BACKEND`, `META_DATABASE_URL` | `memory` / local Postgres URL | `VECTOR_BACKEND=pgvector` uses PostgreSQL + pgvector |
+| `SESSION_DATABASE_URL`, `AUDIT_DATABASE_URL`, `EVAL_DATABASE_URL` | local SQLite files | sessions/insights, audit, eval results |
+| `REDIS_URL` (and `REDIS_HOST=`) | AWS Valkey host | **the default `REDIS_HOST` points at a specific cloud host: set `REDIS_HOST=` (empty) and `REDIS_URL=redis://localhost:6379/0` for local Redis.** Without Redis everything still works, uncached. |
+| `SQL_MODEL`, `INTENT_MODEL`, `RETRY_MODEL`, `FINAL_RETRY_MODEL` | flash-lite / flash-lite / flash / pro | model ladder |
+| `EMBEDDING_BACKEND` | `sentence-transformers` | `hash` = offline, lexical, for tests only |
+| `SLACK_BOT_TOKEN`, `SLACK_CHANNEL`, `BACKEND_ALERT_CHANNEL` | unset | Slack alerts |
+| `ANOMALY_THRESHOLD`, `PARAM_MATCH_THRESHOLD`, `FALLBACK_MIN_SIMILARITY` | `3` / `0.4` / `0.8` | tuning |
+
+### 2. Run the API and the UI
+```bash
+python -m uvicorn app.main:app --reload --port 8080     # API  → http://localhost:8080
+cd frontend-react && npm run dev                        # UI   → http://localhost:5173
+```
+The UI has three views: **Sentinel** (default), **Query chat** (`👎 Not what I wanted` re-asks with `dissatisfied=true`),
+and **Eval**. It reads a JWT from `localStorage["auth_token"]` if present.
+
+### 3. Get a token (authenticated use)
+```bash
+export JWT_SECRET=change-me
+python -c "from app.core.auth import create_token; print(create_token('alice', 'super'))"   # roles: user | super | admin
+curl -H "Authorization: Bearer <token>" localhost:8080/api/v1/eval/runs
+```
+
+### 4. Ask a question
+```bash
+curl -s localhost:8080/api/v1/query -H 'Content-Type: application/json' \
+  -d '{"query": "how many flagged transactions in the last 3650 days"}'
+# → {"status":"success","source":"parameterized","metric_id":"flagged_txn_count","cache_hit":false,"results":[{"flagged_count":75}], ...}
+
+# not satisfied? (needs a token with role "super", otherwise 403 generation_requires_super)
+curl -s localhost:8080/api/v1/query -H "Authorization: Bearer <super-token>" -H 'Content-Type: application/json' \
+  -d '{"query": "...", "dissatisfied": true, "session_id": "<from the first response>"}'
+```
+Verified on the bundled database: flagged transactions → 75, failed logins → 50, PEP users → 20, and "open alerts by
+severity" → `no_match` with *"table 'alerts' does not exist"*.
+
+### 5. Metric catalog and golden dataset
+```bash
+python -m app.modules.catalog.metric_generator          # regenerate app/data/metric_catalog.json (executes every metric)
+python -m app.eval.golden_builder                       # regenerate app/data/golden_dataset.json
+python -m app.core.schema_mapping --db "sqlite:///file:$PWD/derivinsightnew.db?mode=ro&uri=true" --execute
+#   → which metrics run on this database (read-only), and whether each executes
+```
+
+### 6. Evaluation
+```bash
+pytest tests/eval                                       # regression suite: persists a run, fails on a drop or below the floors
+UPDATE_EVAL_BASELINE=1 pytest tests/eval               # accept an intentional change (rewrites app/data/eval_baseline.json)
+curl -X POST "localhost:8080/api/v1/eval/run?label=nightly"   # same, via the API (results appear on the Eval view)
+```
+
+### 7. Tests
+```bash
+pytest -q                                               # offline suite (fakes for LLM/Redis; hash embedder)
+NL2SQL_TEST_PG=postgresql+psycopg2://localhost:5432 pytest tests/integration   # live PostgreSQL + pgvector
+```
+The integration tests need a Postgres user that can create databases and the `vector` extension; each test uses a
+throwaway database.
+
+### 8. PostgreSQL + pgvector + migration
+```bash
+brew install pgvector                                   # for Postgres 17/18 (not 14); then CREATE EXTENSION vector
+createdb derivinsight && createdb nl2sql_meta
+python -m app.files.migrate_to_postgres --source sqlite:///./derivinsightnew.db \
+       --target postgresql+psycopg2://localhost:5432/derivinsight
+#   legacy shapes are mirrored 1:1 (nothing invented), text timestamps become real TIMESTAMPs, then verified
+export DATABASE_URL=postgresql+psycopg2://localhost:5432/derivinsight
+export VECTOR_BACKEND=pgvector META_DATABASE_URL=postgresql+psycopg2://localhost:5432/nl2sql_meta
+```
+`--target-schema canonical` is refused for a legacy source (it would need data the source does not have).
+
+### 9. Docker
+`docker build -t insightos .` builds the API image (Python 3.11). Pass the same environment variables.
+
+---
+
+## 📚 API reference (important endpoints, by importance)
+
+All paths are under `http://localhost:8080`. `Auth` = JWT bearer token; calls without one run as the shared
+`anonymous` user unless `AUTH_REQUIRED=true`.
+
+| # | Method & path | Purpose | Auth / notes |
+| :-: | :--- | :--- | :--- |
+| 1 | `POST /api/v1/query` | Ask a question. Body: `query`, `domain`, `session_id`, `dissatisfied`. Returns `status` (`success`, `no_match`, `needs_clarification`, `failed`), `source` (`parameterized`/`generated`), `metric_id`, `cache_hit`, `session_id`, `results`, `insight`. | `dissatisfied=true` needs role `super` (403 otherwise); foreign `session_id` → 403 |
+| 2 | `GET /api/v1/sentinel/scan/stream` | Live autonomous scan (Server-Sent Events: missions, logs, deep dives, correlation, narrative, `insights_saved`). | Scan and insights are owned by the caller |
+| 3 | `GET /api/v1/sentinel/scan` | Same scan, returned at once. | as above |
+| 4 | `POST /api/v1/sentinel/insights/{insight_id}/rating` | Rate an insight `{"rating": true|false}`. `false` opens a human-review thread and may raise the anomaly flag. | owner only (404 otherwise) |
+| 5 | `GET /api/v1/sentinel/insights/anomaly`<br>`POST /api/v1/sentinel/insights/anomaly/detect` | Anomaly status; the "Insight Anomaly Detection" button (flags once when false ratings > 3). | per user |
+| 6 | `GET /api/v1/sentinel/handoff/threads`<br>`GET …/threads/{thread_id}`<br>`POST …/threads/{thread_id}/messages` | Human-review chat. Reviewers (`admin`/`super`) see all open threads and reply as `human`. | owner or reviewer |
+| 7 | `GET /api/v1/sentinel/history`<br>`GET /api/v1/sentinel/history/{scan_id}` | Past scans. | owner only |
+| 8 | `GET /api/v1/eval/metrics`<br>`GET /api/v1/eval/runs`, `GET …/runs/{run_id}`<br>`POST /api/v1/eval/run` | Eval dashboard data (precision, recall, faithfulness, relevancy over runs); trigger a run. | currently unauthenticated (see limitations) |
+| 9 | `POST /api/v1/alert` | Natural language → alert metric rule. | |
+| 10 | `POST /api/v1/alerts/metrics`, `GET /api/v1/alerts/metrics`, `GET/PUT/DELETE /api/v1/alerts/metrics/{metric_id}` | Manage saved alert rules. | |
+| 11 | `GET /api/v1/alerts/active`, `GET /api/v1/alerts/history`, `GET /api/v1/alerts/stats` | Active alerts, history, summary. | |
+| 12 | `POST /api/v1/dashboards`, `GET /api/v1/dashboards`, `GET /api/v1/dashboards/{dashboardId}` | Save and load dashboards. | |
+| 13 | `GET /health` | Liveness probe. | |
+
+Operational and diagnostic routes also exist (`/api/db-test/*`, `/redis-test/*`, alert-engine and event-generator
+start/stop, `/api/v1/alerts/redis/*`). They are not part of the product surface and are deliberately not documented here;
+do not expose them publicly.
+
+---
+
+## ⚠️ Known limitations
+
+Tracked in `ISSUES.md`; the ones that matter when deploying:
+
+- **Enum vocabularies on the bundled database (ISS-106).** Its values differ from the catalog's: `payment_method` is
+  `Credit Card`/`Wire Transfer`/… (catalog: `CARD`, `BANK_TRANSFER`, …), transactions have `CANCELLED`/`REFUND` (catalog:
+  `REVERSED`/`BONUS`), users have a `CRITICAL` risk level the catalog does not know, and `failure_reason` is free text.
+  Affected: the `*_payment_method_count`, `*_status_count`, `*_txn_type_count`, `*_failure_reason_count`,
+  `users_risk_level_count` and the four `high_risk_*` metrics (they silently exclude `CRITICAL`); empty-string values are
+  also treated as real values (ISS-107). Metrics that group by a column (`*_by_status`, …) report the real values and are fine.
+- **Secrets hygiene.** `.env.example` is tracked and currently contains a real-looking database credential (ISS-93):
+  rotate it and keep placeholders only. Start-up also logs the full `DATABASE_URL` for non-SQLite databases (ISS-94), so
+  avoid password-bearing URLs until that is fixed. The default `REDIS_HOST` is a concrete cloud host (ISS-103).
+- **Auth is opt-in.** Set `JWT_SECRET` and `AUTH_REQUIRED=true`; the `/eval` and `/alert` families are not yet behind identity.
+- **Result scoping:** catalog templates are global. Isolation is enforced for sessions, insights, ratings, scans, audit and the
+  cache, but not yet at the row level of business data (needs an ownership model for business tables).
+- **Eval numbers are optimistic** (golden questions reuse catalog wording; expected rows come from synthetic data) and the
+  committed floors are tied to the offline hash embedder. Re-baseline with real data.
+- **Sentinel** has the retry/fallback/parsing/audit stack, but not the catalog-first path, caching, or the `super` gate.
+- Free-form SQL safety is a denylist plus the AST check: use a read-only database role.
+- Other LLM callers (insights, visualization, entity extraction, …) still parse JSON ad hoc and do not raise backend alerts.
 
 ---
 

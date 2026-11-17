@@ -1,6 +1,19 @@
 from typing import Dict, Any, Tuple
-from app.services.llm import llm_service
+from typing import Optional
+
+from pydantic import BaseModel
+
+from app.services.llm import LLMCallError, UnparsableLLMResponse, is_llm_failure, llm_service, parse_llm_json
 from app.core.logger import logger
+
+class IntentReply(BaseModel):
+    intent: str  # required: a JSON object without an intent is treated as unparsable
+    confidence: float = 0.9
+    complexity: str = "Simple"
+    needs_clarification: bool = False
+    clarity_score: float = 0.9
+    off_topic_reason: Optional[str] = None
+
 
 class IntentClassificationModule:
     """
@@ -76,28 +89,25 @@ Output JSON only.
         try:
             from app.core.config import settings
             response_text = await llm_service.generate_response(prompt, model_name=settings.INTENT_MODEL)
-            # Simple cleanup to handle potential markdown
-            response_text = response_text.replace("```json", "").replace("```", "").strip()
-            
-            import json
-            data = json.loads(response_text)
-            
-            intent = data.get("intent", "SELECT")
-            confidence = data.get("confidence", 0.9)
-            complexity = data.get("complexity", "Simple")
-            needs_clarification = data.get("needs_clarification", False)
-            clarity_score = data.get("clarity_score", 0.9)
-            
+            if is_llm_failure(response_text):
+                raise LLMCallError(response_text)
+            data = parse_llm_json(response_text, IntentReply, stage="intent_classification")  # one shot, alerts on failure
+
+            intent, confidence, complexity = data.intent, data.confidence, data.complexity
+            needs_clarification = data.needs_clarification
+
             # Override needs_clarification if clarity is too low
-            if clarity_score < 0.6:
+            if data.clarity_score < 0.6:
                 needs_clarification = True
-                
+
             logger.info(f"Classification Result: {intent} (conf: {confidence}) | Needs Clarification: {needs_clarification}")
             return intent, confidence, complexity, needs_clarification
-            
+
+        except UnparsableLLMResponse:
+            # Backend alert already emitted; do not guess confidence. No second LLM call.
+            return "SELECT", 0.5, "Simple", False
         except Exception as e:
             logger.error(f"Intent classification error: {str(e)}")
-            # Fallback if LLM fails or returns bad JSON
             return "SELECT", 0.9, "Simple", False
 
 intent_module = IntentClassificationModule()

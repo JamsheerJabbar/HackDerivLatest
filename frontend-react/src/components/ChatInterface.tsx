@@ -20,29 +20,41 @@ interface Message {
     visualization?: any;
     insight?: string;
     recommendation?: string;
+    question?: string;       // the question that produced this answer (for "not what I wanted")
+    source?: string;         // parameterized | generated
+    cacheHit?: boolean;
 }
 
 export default function ChatInterface({ domain }: ChatInterfaceProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [conversationHistory, setConversationHistory] = useState<any[]>([]);
+    const [sessionId, setSessionId] = useState<string | null>(null);
 
     const queryMutation = useMutation({
-        mutationFn: async (query: string) => {
+        mutationFn: async ({ query, dissatisfied = false }: { query: string; dissatisfied?: boolean }) => {
+            const token = localStorage.getItem('auth_token');
             const response = await fetch('http://localhost:8080/api/v1/query', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                 body: JSON.stringify({
                     query,
                     domain,
                     conversation_history: conversationHistory,
+                    session_id: sessionId,
+                    dissatisfied,
                 }),
             });
+            if (response.status === 403) throw new Error('forbidden');
             if (!response.ok) throw new Error('Query failed');
             return response.json();
         },
-        onSuccess: (data) => {
+        onSuccess: (data, variables) => {
+            if (data.session_id) setSessionId(data.session_id);
             const assistantMessage: Message = {
+                question: variables.query,
+                source: data.source,
+                cacheHit: data.cache_hit,
                 role: 'assistant',
                 content: data.status === 'success'
                     ? `✅ Query executed successfully! Found ${data.results?.length || 0} results.`
@@ -63,13 +75,17 @@ export default function ChatInterface({ domain }: ChatInterfaceProps) {
             if (data.status === 'success') {
                 toast.success('Query executed successfully!');
             } else if (data.status === 'needs_clarification') {
-                toast.info('Need more information');
+                toast('Need more information');
             } else {
                 toast.error('Query failed');
             }
         },
-        onError: () => {
-            toast.error('Failed to connect to API');
+        onError: (err: Error) => {
+            if (err.message === 'forbidden') {
+                toast.error('Regenerating a new query requires super access.');
+            } else {
+                toast.error('Failed to connect to API');
+            }
         },
     });
 
@@ -83,7 +99,7 @@ export default function ChatInterface({ domain }: ChatInterfaceProps) {
 
         setMessages(prev => [...prev, userMessage]);
         setConversationHistory(prev => [...prev, { role: 'user', content: input }]);
-        queryMutation.mutate(input);
+        queryMutation.mutate({ query: input });
         setInput('');
     };
 
@@ -155,6 +171,19 @@ export default function ChatInterface({ domain }: ChatInterfaceProps) {
                             <div className="message-content">
                                 <ReactMarkdown>{msg.content}</ReactMarkdown>
                             </div>
+
+                            {msg.role === 'assistant' && msg.question && (
+                                <div className="message-feedback">
+                                    {msg.source && <span className="source-badge">{msg.source}{msg.cacheHit ? ' · cached' : ''}</span>}
+                                    <button
+                                        onClick={() => queryMutation.mutate({ query: msg.question!, dissatisfied: true })}
+                                        disabled={queryMutation.isPending}
+                                        title="Ask for a freshly generated query (requires super access)"
+                                    >
+                                        👎 Not what I wanted
+                                    </button>
+                                </div>
+                            )}
 
                             {msg.sql && (
                                 <div className="sql-block">

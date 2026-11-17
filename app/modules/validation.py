@@ -14,6 +14,11 @@ class ValidationModule:
         """
         try:
             sqlglot.transpile(sql)
+            from app.modules.catalog.templates import assert_select_only
+            try:
+                assert_select_only(sql)  # generated SQL must be a single SELECT; never UPDATE/DELETE/INSERT/DDL
+            except ValueError:
+                return False, "Only a single SELECT statement is allowed."
             # Further checks: Schema conformance (mocked here)
             if "DROP" in sql.upper():
                 return False, "DROP statements are not allowed."

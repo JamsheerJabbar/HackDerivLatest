@@ -4,6 +4,12 @@ from app.core.config import settings
 from app.orchestration.scan_memory import scan_memory
 import json
 
+from app.services.llm import UnparsableLLMResponse
+from app.services.retry_policy import RetriesExhausted, RetryPolicy
+
+_DOMAINS = ("security", "compliance", "operations", "risk")
+_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+
 class SentinelBrainstormer:
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
@@ -70,8 +76,7 @@ class SentinelBrainstormer:
             ]
         """)
 
-        chain = prompt | self.llm
-        response = await chain.ainvoke({
+        variables = {
             "schema": self.schema_context,
             "sec_count": domain_weights.get("security", 2),
             "comp_count": domain_weights.get("compliance", 2),
@@ -81,16 +86,41 @@ class SentinelBrainstormer:
             "scan_count": adaptive["scan_count"],
             "focus_areas": "\n".join(adaptive["focus_areas"]) or "No previous data. This is the first scan.",
             "avoid_queries": "\n".join(f"- {q}" for q in adaptive["avoid_queries"]) or "None — first scan."
-        })
+        }
+
+        async def attempt(model: str, n: int):
+            llm = self.llm if n == 1 else ChatGoogleGenerativeAI(
+                model=model, google_api_key=settings.GEMINI_API_KEY, temperature=0.8)
+            response = await (prompt | llm).ainvoke(variables)
+            return self.parse_missions(response.content)  # one shot per attempt; alert + raise when unparsable
 
         try:
-            text = response.content
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
+            return (await RetryPolicy(base_model=settings.DISCOVERY_MODEL).run(attempt, stage="sentinel_brainstorm")).value
+        except RetriesExhausted:
+            return []  # caller keeps its static fallback mission
 
-            return json.loads(text)
+    def parse_missions(self, text: str, count=None):
+        """Strict one-shot parse of the brainstorm reply (JSON list of mission objects)."""
+        import re
+        from app.services.backend_alerts import emit_backend_alert
+        try:
+            t = (text if isinstance(text, str) else json.dumps(text)).strip()
+            fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", t, re.S)
+            data = json.loads(fence.group(1) if fence else t)
+            if not isinstance(data, list):
+                raise ValueError("expected a JSON list")
+            for m in data:
+                if not isinstance(m, dict):
+                    raise ValueError("mission must be an object")
+                for k in ("id", "name", "query", "domain", "severity"):
+                    if not isinstance(m.get(k), str) or not m[k].strip():
+                        raise ValueError(f"mission field '{k}' must be a non-empty string")
+                if m["domain"] not in _DOMAINS:
+                    raise ValueError(f"invalid domain: {m['domain']}")
+                if m["severity"] not in _SEVERITIES:
+                    raise ValueError(f"invalid severity: {m['severity']}")
+            return data[:count] if count else data
         except Exception as e:
-            print(f"Failed to parse brainstormed missions: {e}")
-            return []
+            emit_backend_alert("unparsable_llm_response", f"sentinel_brainstorm: {e}", stage="sentinel_brainstorm",
+                               raw=str(text)[:500])
+            raise UnparsableLLMResponse("sentinel_brainstorm", str(text), str(e)) from e
